@@ -149,7 +149,7 @@ public class EventConsumerThread extends CloseableDaemonThread
     private static final int BUFFER_SIZE = 1024;
     private static final byte[] MAGIC_NUMBER_BYTES = MAGIC_NUMBER.getBytes( US_ASCII );
     private static final byte[] STREAM_ENCODING_BYTES = STREAM_ENCODING.name().getBytes( US_ASCII );
-    private static final int DELIMINATOR_LENGTH = 1;
+    private static final int DELIMITER_LENGTH = 1;
     private static final int BYTE_LENGTH = 1;
     private static final int INT_LENGTH = 4;
     public static final int NO_POSITION = -1;
@@ -211,9 +211,10 @@ public class EventConsumerThread extends CloseableDaemonThread
         {
             try
             {
-                memento.eventType = readEventType( eventTypes, memento );
+                ForkedProcessEventType eventType = readEventType( eventTypes, memento );
+                RunMode runMode = null;
 
-                for ( SegmentType segmentType : nextSegmentType( memento.eventType ) )
+                for ( SegmentType segmentType : nextSegmentType( eventType ) )
                 {
                     if ( segmentType == null )
                     {
@@ -223,7 +224,7 @@ public class EventConsumerThread extends CloseableDaemonThread
                     switch ( segmentType )
                     {
                         case RUN_MODE:
-                            memento.runMode = runModes.get( readSegment( memento ) );
+                            runMode = runModes.get( readSegment( memento ) );
                             break;
                         case STRING_ENCODING:
                             memento.charset = readCharset( memento );
@@ -236,7 +237,7 @@ public class EventConsumerThread extends CloseableDaemonThread
                             break;
                         case END_OF_FRAME:
                             memento.line.positionByteBuffer = memento.bb.position();
-                            eventHandler.handleEvent( toEvent( memento.eventType, memento.runMode, memento.data ) );
+                            eventHandler.handleEvent( toEvent( eventType, runMode, memento.data ) );
                             break;
                         default:
                             memento.line.positionByteBuffer = NO_POSITION;
@@ -246,7 +247,6 @@ public class EventConsumerThread extends CloseableDaemonThread
                                 + segmentType );
                     }
                 }
-                memento.reset();
             }
             catch ( MalformedFrameException e )
             {
@@ -256,6 +256,14 @@ public class EventConsumerThread extends CloseableDaemonThread
                     memento.line.write( memento.bb, e.readFrom, length );
                 }
             }
+            catch ( RuntimeException e )
+            {
+                arguments.dumpStreamException( e );
+            }
+            finally
+            {
+                memento.reset();
+            }
         }
         while ( true );
     }
@@ -263,8 +271,8 @@ public class EventConsumerThread extends CloseableDaemonThread
     protected ForkedProcessEventType readEventType( Map<Segment, ForkedProcessEventType> eventTypes, Memento memento )
         throws IOException, MalformedFrameException
     {
-        int readCount = DELIMINATOR_LENGTH + MAGIC_NUMBER_BYTES.length + DELIMINATOR_LENGTH
-            + BYTE_LENGTH + DELIMINATOR_LENGTH;
+        int readCount = DELIMITER_LENGTH + MAGIC_NUMBER_BYTES.length + DELIMITER_LENGTH
+            + BYTE_LENGTH + DELIMITER_LENGTH;
         if ( read( memento, readCount ) == EOF )
         {
             throw new EOFException();
@@ -277,13 +285,13 @@ public class EventConsumerThread extends CloseableDaemonThread
     protected void readString( Memento memento ) throws IOException, MalformedFrameException
     {
         memento.cb.clear();
-        if ( read( memento, INT_LENGTH + DELIMINATOR_LENGTH ) == EOF )
+        if ( read( memento, INT_LENGTH + DELIMITER_LENGTH ) == EOF )
         {
             throw new EOFException();
         }
 
         int readCount = readInt( memento );
-        if ( read( memento, readCount + DELIMINATOR_LENGTH ) == EOF )
+        if ( read( memento, readCount + DELIMITER_LENGTH ) == EOF )
         {
             throw new EOFException();
         }
@@ -312,13 +320,13 @@ public class EventConsumerThread extends CloseableDaemonThread
     @Nonnull
     protected Segment readSegment( Memento memento ) throws IOException, MalformedFrameException
     {
-        if ( read( memento, BYTE_LENGTH + DELIMINATOR_LENGTH ) == EOF )
+        if ( read( memento, BYTE_LENGTH + DELIMITER_LENGTH ) == EOF )
         {
             throw new EOFException();
         }
         ByteBuffer bb = memento.bb;
         int readCount = readByte( memento ) & 0xff;
-        if ( read( memento, readCount + DELIMINATOR_LENGTH ) == EOF )
+        if ( read( memento, readCount + DELIMITER_LENGTH ) == EOF )
         {
             throw new EOFException();
         }
@@ -331,13 +339,13 @@ public class EventConsumerThread extends CloseableDaemonThread
     @Nonnull
     protected Charset readCharset( Memento memento ) throws IOException, MalformedFrameException
     {
-        if ( read( memento, BYTE_LENGTH + DELIMINATOR_LENGTH ) == EOF )
+        if ( read( memento, BYTE_LENGTH + DELIMITER_LENGTH ) == EOF )
         {
             throw new EOFException();
         }
         ByteBuffer bb = memento.bb;
         int length = readByte( memento ) & 0xff;
-        if ( read( memento, length + DELIMINATOR_LENGTH ) == EOF )
+        if ( read( memento, length + DELIMITER_LENGTH ) == EOF )
         {
             throw new EOFException();
         }
@@ -703,16 +711,6 @@ public class EventConsumerThread extends CloseableDaemonThread
         EOF
     }
 
-    /**
-     * Determines whether the frame is complete or malformed.
-     */
-    private enum FrameCompletion
-    {
-        NOT_COMPLETE,
-        COMPLETE,
-        MALFORMED
-    }
-
     private enum SegmentType
     {
         RUN_MODE,
@@ -840,9 +838,6 @@ public class EventConsumerThread extends CloseableDaemonThread
         final List<Object> data = new ArrayList<>();
         final CharBuffer cb = CharBuffer.allocate( BUFFER_SIZE );
         final ByteBuffer bb = ByteBuffer.allocate( BUFFER_SIZE );
-        FrameCompletion frameCompletion;
-        ForkedProcessEventType eventType;
-        RunMode runMode;
         Charset charset;
 
         Memento()
@@ -854,9 +849,6 @@ public class EventConsumerThread extends CloseableDaemonThread
 
         void reset()
         {
-            frameCompletion = null;
-            eventType = null;
-            runMode = null;
             charset = null;
         }
     }
