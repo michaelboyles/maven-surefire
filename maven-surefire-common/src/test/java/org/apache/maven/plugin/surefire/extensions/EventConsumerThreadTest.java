@@ -22,6 +22,8 @@ import java.util.Map;
 
 import static java.lang.Math.min;
 import static java.nio.charset.CodingErrorAction.REPLACE;
+import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.mapEventTypes;
 import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
@@ -349,6 +351,24 @@ public class EventConsumerThreadTest
         thread.readEventType( eventTypes, memento );
     }
 
+    @Test( expected = EventConsumerThread.MalformedFrameException.class )
+    public void shouldEventTypeReachedMalformedHeader() throws Exception
+    {
+        Map<Segment, ForkedProcessEventType> eventTypes = mapEventTypes();
+        assertThat( eventTypes )
+            .hasSize( ForkedProcessEventType.values().length );
+
+        byte[] stream = ":xxxxx-xxxxxxxx-xxxxx:\u000E:xxx".getBytes( UTF_8 );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+        thread.readEventType( eventTypes, memento );
+    }
+
     @Test
     public void shouldReadEmptyString() throws Exception
     {
@@ -411,6 +431,55 @@ public class EventConsumerThreadTest
 
         assertThat( thread.readString( memento ) )
             .isEqualTo( "ABC" );
+    }
+
+    @Test
+    public void shouldReadDefaultCharset() throws Exception
+    {
+        byte[] stream = "\u0005:UTF-8:".getBytes( US_ASCII );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        assertThat( thread.readCharset( memento ) )
+            .isNotNull()
+            .isEqualTo( UTF_8 );
+    }
+
+    @Test
+    public void shouldReadNonDefaultCharset() throws Exception
+    {
+        byte[] stream = ( (char) 10 + ":ISO_8859_1:" ).getBytes( US_ASCII );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        assertThat( thread.readCharset( memento ) )
+            .isNotNull()
+            .isEqualTo( ISO_8859_1 );
+    }
+
+    @Test( expected = EventConsumerThread.MalformedFrameException.class )
+    public void malformedCharset() throws Exception
+    {
+        byte[] stream = ( (char) 8 + ":ISO_8859:" ).getBytes( US_ASCII );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        thread.readCharset( memento );
     }
 
     private static class Channel implements ReadableByteChannel
