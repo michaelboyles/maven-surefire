@@ -349,6 +349,70 @@ public class EventConsumerThreadTest
         thread.readEventType( eventTypes, memento );
     }
 
+    @Test
+    public void shouldReadEmptyString() throws Exception
+    {
+        byte[] stream = "\u0000\u0000\u0000\u0000::".getBytes( UTF_8 );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        assertThat( thread.readString( memento ) )
+            .isEmpty();
+    }
+
+    @Test
+    public void shouldReadNullString() throws Exception
+    {
+        byte[] stream = "\u0000\u0000\u0000\u0001:\u0000:".getBytes( UTF_8 );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        assertThat( thread.readString( memento ) )
+            .isNull();
+    }
+
+    @Test
+    public void shouldReadSingleCharString() throws Exception
+    {
+        byte[] stream = "\u0000\u0000\u0000\u0001:A:".getBytes( UTF_8 );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        assertThat( thread.readString( memento ) )
+            .isEqualTo( "A" );
+    }
+
+    @Test
+    public void shouldReadThreeCharactersString() throws Exception
+    {
+        byte[] stream = "\u0000\u0000\u0000\u0003:ABC:".getBytes( UTF_8 );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        assertThat( thread.readString( memento ) )
+            .isEqualTo( "ABC" );
+    }
+
     private static class Channel implements ReadableByteChannel
     {
         private final byte[] bytes;
