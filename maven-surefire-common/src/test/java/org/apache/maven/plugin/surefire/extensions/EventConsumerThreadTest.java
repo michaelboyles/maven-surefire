@@ -2,12 +2,14 @@ package org.apache.maven.plugin.surefire.extensions;
 
 import org.apache.maven.plugin.surefire.extensions.EventConsumerThread.Memento;
 import org.apache.maven.plugin.surefire.extensions.EventConsumerThread.Segment;
+import org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType;
 import org.apache.maven.plugin.surefire.log.api.ConsoleLogger;
 import org.apache.maven.surefire.api.booter.ForkedProcessEventType;
 import org.apache.maven.surefire.api.event.Event;
 import org.apache.maven.surefire.extensions.EventHandler;
 import org.apache.maven.surefire.extensions.ForkNodeArguments;
 import org.apache.maven.surefire.extensions.util.CountdownCloseable;
+import org.fest.assertions.Condition;
 import org.junit.Test;
 
 import javax.annotation.Nonnull;
@@ -25,7 +27,13 @@ import static java.nio.charset.CodingErrorAction.REPLACE;
 import static java.nio.charset.StandardCharsets.ISO_8859_1;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.DATA_INT;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.DATA_STRING;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.END_OF_FRAME;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.RUN_MODE;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.STRING_ENCODING;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.mapEventTypes;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.nextSegmentType;
 import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
 import static org.fest.assertions.Assertions.assertThat;
 import static org.powermock.reflect.Whitebox.invokeMethod;
@@ -482,6 +490,123 @@ public class EventConsumerThreadTest
         thread.readCharset( memento );
     }
 
+    @Test
+    public void shouldMapEventTypeToSegmentType()
+    {
+        SegmentType[] segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_BYE );
+        assertThat( segmentTypes )
+            .hasSize( 1 )
+            .containsOnly( END_OF_FRAME );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_STOP_ON_NEXT_TEST );
+        assertThat( segmentTypes )
+            .hasSize( 1 )
+            .containsOnly( END_OF_FRAME );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_NEXT_TEST );
+        assertThat( segmentTypes )
+            .hasSize( 1 )
+            .containsOnly( END_OF_FRAME );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_CONSOLE_ERROR );
+        assertThat( segmentTypes )
+            .hasSize( 5 )
+            .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_JVM_EXIT_ERROR );
+        assertThat( segmentTypes )
+            .hasSize( 5 )
+            .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_CONSOLE_INFO );
+        assertThat( segmentTypes )
+            .hasSize( 3 )
+            .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_CONSOLE_DEBUG );
+        assertThat( segmentTypes )
+            .hasSize( 3 )
+            .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_CONSOLE_WARNING );
+        assertThat( segmentTypes )
+            .hasSize( 3 )
+            .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_STDOUT );
+        assertThat( segmentTypes )
+            .hasSize( 4 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_STDOUT_NEW_LINE );
+        assertThat( segmentTypes )
+            .hasSize( 4 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_STDERR );
+        assertThat( segmentTypes )
+            .hasSize( 4 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_STDERR_NEW_LINE );
+        assertThat( segmentTypes )
+            .hasSize( 4 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_SYSPROPS );
+        assertThat( segmentTypes )
+            .hasSize( 5 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TESTSET_STARTING );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TESTSET_COMPLETED );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_STARTING );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_SUCCEEDED );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_FAILED );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_SKIPPED );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_ERROR );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+
+        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_ASSUMPTIONFAILURE );
+        assertThat( segmentTypes )
+            .hasSize( 13 )
+            .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
+                DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+    }
+
     private static class Channel implements ReadableByteChannel
     {
         private final byte[] bytes;
@@ -581,6 +706,37 @@ public class EventConsumerThreadTest
         public ConsoleLogger getConsoleLogger()
         {
             return null;
+        }
+    }
+
+    private static class InOrder extends Condition<Object[]>
+    {
+        private final SegmentType[] expected;
+
+        InOrder( SegmentType... expected )
+        {
+            this.expected = expected;
+        }
+
+        @Override
+        public boolean matches( Object[] values )
+        {
+            if ( values == null && expected == null )
+            {
+                return true;
+            }
+            else if ( values != null && expected != null && values.length == expected.length )
+            {
+                boolean matches = true;
+                for ( int i = 0; i < values.length; i++ )
+                {
+
+                    assertThat( values[i] ).isInstanceOf( SegmentType.class );
+                    matches &= values[i] == expected[i];
+                }
+                return matches;
+            }
+            return false;
         }
     }
 }

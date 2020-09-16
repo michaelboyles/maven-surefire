@@ -389,7 +389,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         }
     }
 
-    protected SegmentType[] nextSegmentType( ForkedProcessEventType eventType )
+    static SegmentType[] nextSegmentType( ForkedProcessEventType eventType )
     {
         switch ( eventType )
         {
@@ -693,7 +693,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         EOF
     }
 
-    private enum SegmentType
+    enum SegmentType
     {
         RUN_MODE,
         STRING_ENCODING,
