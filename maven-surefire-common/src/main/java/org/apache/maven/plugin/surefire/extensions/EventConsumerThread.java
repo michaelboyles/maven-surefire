@@ -78,7 +78,7 @@ import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.St
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.StreamReadStatus.OVERFLOW;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.StreamReadStatus.UNDERFLOW;
 import static org.apache.maven.surefire.api.booter.Constants.MAGIC_NUMBER;
-import static org.apache.maven.surefire.api.booter.Constants.STREAM_ENCODING;
+import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
 import static org.apache.maven.surefire.api.report.CategorizedReportEntry.reportEntry;
 
 /**
@@ -148,7 +148,7 @@ public class EventConsumerThread extends CloseableDaemonThread
 
     private static final int BUFFER_SIZE = 1024;
     private static final byte[] MAGIC_NUMBER_BYTES = MAGIC_NUMBER.getBytes( US_ASCII );
-    private static final byte[] STREAM_ENCODING_BYTES = STREAM_ENCODING.name().getBytes( US_ASCII );
+    private static final byte[] DEFAULT_STREAM_ENCODING_BYTES = DEFAULT_STREAM_ENCODING.name().getBytes( US_ASCII );
     private static final int DELIMITER_LENGTH = 1;
     private static final int BYTE_LENGTH = 1;
     private static final int INT_LENGTH = 4;
@@ -227,10 +227,10 @@ public class EventConsumerThread extends CloseableDaemonThread
                             runMode = runModes.get( readSegment( memento ) );
                             break;
                         case STRING_ENCODING:
-                            memento.charset = readCharset( memento );
+                            memento.setCharset( readCharset( memento ) );
                             break;
                         case DATA_STRING:
-                            readString( memento );
+                            memento.data.add( readString( memento ) );
                             break;
                         case DATA_INT:
                             memento.data.add( readInt( memento ) );
@@ -282,7 +282,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         return eventTypes.get( readSegment( memento ) );
     }
 
-    protected void readString( Memento memento ) throws IOException, MalformedFrameException
+    protected String readString( Memento memento ) throws IOException, MalformedFrameException
     {
         memento.cb.clear();
         if ( read( memento, INT_LENGTH + DELIMITER_LENGTH ) == EOF )
@@ -296,9 +296,10 @@ public class EventConsumerThread extends CloseableDaemonThread
             throw new EOFException();
         }
 
+        final String string;
         if ( readCount == 0 )
         {
-            memento.data.add( "" );
+            string = "";
         }
         else if ( readCount == 1 )
         {
@@ -307,14 +308,15 @@ public class EventConsumerThread extends CloseableDaemonThread
                 throw new EOFException();
             }
             byte oneChar = memento.bb.get();
-            memento.data.add( oneChar == 0 ? null : String.valueOf( (char) oneChar ) );
+            string = oneChar == 0 ? null : String.valueOf( (char) oneChar );
         }
         else
         {
-            memento.data.add( readString( memento, readCount ) );
+            string = readString( memento, readCount );
         }
 
         checkDelimiter( memento );
+        return string;
     }
 
     @Nonnull
@@ -353,19 +355,22 @@ public class EventConsumerThread extends CloseableDaemonThread
         int offset = bb.arrayOffset() + bb.position();
         bb.position( bb.position() + length );
         boolean isDefaultEncoding = false;
-        if ( length == STREAM_ENCODING_BYTES.length )
+        if ( length == DEFAULT_STREAM_ENCODING_BYTES.length )
         {
             isDefaultEncoding = true;
             for ( int i = 0; i < length; i++ )
             {
-                isDefaultEncoding &= STREAM_ENCODING_BYTES[i] == array[offset + i];
+                isDefaultEncoding &= DEFAULT_STREAM_ENCODING_BYTES[i] == array[offset + i];
             }
         }
 
         try
         {
             Charset charset =
-                isDefaultEncoding ? STREAM_ENCODING : Charset.forName( new String( array, offset, length, US_ASCII ) );
+                isDefaultEncoding
+                    ? DEFAULT_STREAM_ENCODING
+                    : Charset.forName( new String( array, offset, length, US_ASCII ) );
+
             checkDelimiter( memento );
             return charset;
         }
@@ -609,7 +614,7 @@ public class EventConsumerThread extends CloseableDaemonThread
     String readString( @Nonnull final Memento memento, @Nonnegative final int totalBytes )
         throws IOException, MalformedFrameException
     {
-        memento.decoder.reset();
+        memento.getDecoder().reset();
         final CharBuffer output = memento.cb;
         output.clear();
         final ByteBuffer input = memento.bb;
@@ -632,7 +637,7 @@ public class EventConsumerThread extends CloseableDaemonThread
             {
                 boolean endOfChunk = output.remaining() >= bytesToRead;
                 boolean endOfOutput = isLastChunk && endOfChunk;
-                int readInputBytes = decode( memento.decoder, input, output, bytesToDecode, endOfOutput,
+                int readInputBytes = decode( memento.getDecoder(), input, output, bytesToDecode, endOfOutput,
                     memento.line.positionByteBuffer );
                 bytesToDecode -= readInputBytes;
                 countDecodedBytes += readInputBytes;
@@ -646,7 +651,7 @@ public class EventConsumerThread extends CloseableDaemonThread
             }
         }
 
-        memento.decoder.reset();
+        memento.getDecoder().reset();
         output.clear();
 
         return toString( strings );
@@ -794,7 +799,7 @@ public class EventConsumerThread extends CloseableDaemonThread
                 return;
             }
             ConsoleLogger logger = arguments.getConsoleLogger();
-            String s = toString( STREAM_ENCODING );
+            String s = toString( DEFAULT_STREAM_ENCODING );
             if ( s.contains( PRINTABLE_JVM_NATIVE_STREAM ) )
             {
                 if ( logger.isDebugEnabled() )
@@ -833,27 +838,46 @@ public class EventConsumerThread extends CloseableDaemonThread
 
     class Memento
     {
-        final CharsetDecoder decoder;
+        private final CharsetDecoder defaultDecoder;
+        private CharsetDecoder currentDecoder;
         final BufferedStream line = new BufferedStream( 32 );
         final List<Object> data = new ArrayList<>();
         final CharBuffer cb = CharBuffer.allocate( BUFFER_SIZE );
         final ByteBuffer bb = ByteBuffer.allocate( BUFFER_SIZE );
-        Charset charset;
 
         Memento()
         {
-            decoder = STREAM_ENCODING.newDecoder()
+            defaultDecoder = DEFAULT_STREAM_ENCODING.newDecoder()
                 .onMalformedInput( REPLACE )
                 .onUnmappableCharacter( REPLACE );
         }
 
         void reset()
         {
-            charset = null;
+            currentDecoder = null;
+        }
+
+        CharsetDecoder getDecoder()
+        {
+            return currentDecoder == null ? defaultDecoder : currentDecoder;
+        }
+
+        void setCharset( Charset charset )
+        {
+            if ( charset.name().equals( defaultDecoder.charset().name() ) )
+            {
+                currentDecoder = defaultDecoder;
+            }
+            else
+            {
+                currentDecoder = charset.newDecoder()
+                    .onMalformedInput( REPLACE )
+                    .onUnmappableCharacter( REPLACE );
+            }
         }
     }
 
-    static class Segment
+    private static class Segment
     {
         private final byte[] array;
         private final int fromIndex;
