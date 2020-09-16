@@ -74,7 +74,6 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 import static java.nio.charset.CodingErrorAction.REPLACE;
 import static java.nio.charset.StandardCharsets.US_ASCII;
-import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.StreamReadStatus.EOF;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.StreamReadStatus.OVERFLOW;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.StreamReadStatus.UNDERFLOW;
 import static org.apache.maven.surefire.api.booter.Constants.MAGIC_NUMBER;
@@ -273,28 +272,18 @@ public class EventConsumerThread extends CloseableDaemonThread
     {
         int readCount = DELIMITER_LENGTH + MAGIC_NUMBER_BYTES.length + DELIMITER_LENGTH
             + BYTE_LENGTH + DELIMITER_LENGTH;
-        if ( read( memento, readCount ) == EOF )
-        {
-            throw new EOFException();
-        }
+        read( memento, readCount );
         checkHeader( memento );
-
         return eventTypes.get( readSegment( memento ) );
     }
 
     protected String readString( Memento memento ) throws IOException, MalformedFrameException
     {
         memento.cb.clear();
-        if ( read( memento, INT_LENGTH + DELIMITER_LENGTH ) == EOF )
-        {
-            throw new EOFException();
-        }
+        read( memento, INT_LENGTH + DELIMITER_LENGTH );
 
         int readCount = readInt( memento );
-        if ( read( memento, readCount + DELIMITER_LENGTH ) == EOF )
-        {
-            throw new EOFException();
-        }
+        read( memento, readCount + DELIMITER_LENGTH );
 
         final String string;
         if ( readCount == 0 )
@@ -303,10 +292,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         }
         else if ( readCount == 1 )
         {
-            if ( read( memento, 1 ) == EOF )
-            {
-                throw new EOFException();
-            }
+            read( memento, 1 );
             byte oneChar = memento.bb.get();
             string = oneChar == 0 ? null : String.valueOf( (char) oneChar );
         }
@@ -322,16 +308,10 @@ public class EventConsumerThread extends CloseableDaemonThread
     @Nonnull
     protected Segment readSegment( Memento memento ) throws IOException, MalformedFrameException
     {
-        if ( read( memento, BYTE_LENGTH + DELIMITER_LENGTH ) == EOF )
-        {
-            throw new EOFException();
-        }
-        ByteBuffer bb = memento.bb;
+        read( memento, BYTE_LENGTH + DELIMITER_LENGTH );
         int readCount = readByte( memento ) & 0xff;
-        if ( read( memento, readCount + DELIMITER_LENGTH ) == EOF )
-        {
-            throw new EOFException();
-        }
+        read( memento, readCount + DELIMITER_LENGTH );
+        ByteBuffer bb = memento.bb;
         Segment segment = new Segment( bb.array(), bb.arrayOffset() + bb.position(), readCount );
         bb.position( bb.position() + readCount );
         checkDelimiter( memento );
@@ -341,16 +321,10 @@ public class EventConsumerThread extends CloseableDaemonThread
     @Nonnull
     protected Charset readCharset( Memento memento ) throws IOException, MalformedFrameException
     {
-        if ( read( memento, BYTE_LENGTH + DELIMITER_LENGTH ) == EOF )
-        {
-            throw new EOFException();
-        }
+        read( memento, BYTE_LENGTH + DELIMITER_LENGTH );
         ByteBuffer bb = memento.bb;
         int length = readByte( memento ) & 0xff;
-        if ( read( memento, length + DELIMITER_LENGTH ) == EOF )
-        {
-            throw new EOFException();
-        }
+        read( memento, length + DELIMITER_LENGTH );
         byte[] array = bb.array();
         int offset = bb.arrayOffset() + bb.position();
         bb.position( bb.position() + length );
@@ -473,10 +447,19 @@ public class EventConsumerThread extends CloseableDaemonThread
             {
                 isEnd = channel.read( buffer ) == -1;
             }
+
             buffer.limit( buffer.position() );
             buffer.position( mark );
             int readBytes = buffer.remaining();
-            return readBytes == 0 && isEnd ? EOF : ( readBytes >= recommendedCount ? OVERFLOW : UNDERFLOW );
+
+            if ( isEnd && readBytes < recommendedCount )
+            {
+                throw new EOFException();
+            }
+            else
+            {
+                return readBytes >= recommendedCount ? OVERFLOW : UNDERFLOW;
+            }
         }
     }
 
@@ -623,15 +606,9 @@ public class EventConsumerThread extends CloseableDaemonThread
         for ( boolean endOfInput = false; !endOfInput; )
         {
             final int bytesToRead = totalBytes - countDecodedBytes;
-
-            if ( read( memento, bytesToRead - input.remaining() ) == EOF )
-            {
-                throw new EOFException();
-            }
-
+            read( memento, bytesToRead - input.remaining() );
             int bytesToDecode = min( input.remaining(), bytesToRead );
             final boolean isLastChunk = bytesToDecode == bytesToRead;
-
             endOfInput = countDecodedBytes + bytesToDecode >= totalBytes;
             do
             {
@@ -877,7 +854,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         }
     }
 
-    private static class Segment
+    static class Segment
     {
         private final byte[] array;
         private final int fromIndex;

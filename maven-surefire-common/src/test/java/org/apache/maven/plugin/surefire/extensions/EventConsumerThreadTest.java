@@ -1,7 +1,9 @@
 package org.apache.maven.plugin.surefire.extensions;
 
 import org.apache.maven.plugin.surefire.extensions.EventConsumerThread.Memento;
+import org.apache.maven.plugin.surefire.extensions.EventConsumerThread.Segment;
 import org.apache.maven.plugin.surefire.log.api.ConsoleLogger;
+import org.apache.maven.surefire.api.booter.ForkedProcessEventType;
 import org.apache.maven.surefire.api.event.Event;
 import org.apache.maven.surefire.extensions.EventHandler;
 import org.apache.maven.surefire.extensions.ForkNodeArguments;
@@ -16,10 +18,12 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.CharsetDecoder;
+import java.util.Map;
 
 import static java.lang.Math.min;
 import static java.nio.charset.CodingErrorAction.REPLACE;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.mapEventTypes;
 import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
 import static org.fest.assertions.Assertions.assertThat;
 import static org.powermock.reflect.Whitebox.invokeMethod;
@@ -304,6 +308,45 @@ public class EventConsumerThreadTest
         System.out.println( "decoded 100 bytes within " + ( l2 - l1 ) );
         assertThat( s )
             .isEqualTo( PATTERN1 );
+    }
+
+    @Test
+    public void shouldReadEventType() throws Exception
+    {
+        Map<Segment, ForkedProcessEventType> eventTypes = mapEventTypes();
+        assertThat( eventTypes )
+            .hasSize( ForkedProcessEventType.values().length );
+
+        byte[] stream = ":maven-surefire-event:\u000E:std-out-stream:".getBytes( UTF_8 );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+
+        ForkedProcessEventType eventType = thread.readEventType( eventTypes, memento );
+        assertThat( eventType )
+            .isEqualTo( ForkedProcessEventType.BOOTERCODE_STDOUT );
+    }
+
+    @Test( expected = EOFException.class )
+    public void shouldEventTypeReachedEndOfStream() throws Exception
+    {
+        Map<Segment, ForkedProcessEventType> eventTypes = mapEventTypes();
+        assertThat( eventTypes )
+            .hasSize( ForkedProcessEventType.values().length );
+
+        byte[] stream = ":maven-surefire-event:\u000E:xxx".getBytes( UTF_8 );
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        memento.setCharset( UTF_8 );
+        thread.readEventType( eventTypes, memento );
     }
 
     private static class Channel implements ReadableByteChannel
