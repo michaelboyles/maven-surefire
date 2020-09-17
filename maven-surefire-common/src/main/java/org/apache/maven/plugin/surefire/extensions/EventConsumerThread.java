@@ -676,7 +676,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         return map;
     }
 
-    private static Map<Segment, RunMode> mapRunModes()
+    static Map<Segment, RunMode> mapRunModes()
     {
         Map<Segment, RunMode> map = new HashMap<>();
         for ( RunMode e : RunMode.values() )

@@ -42,8 +42,6 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.CharsetDecoder;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -61,6 +59,7 @@ import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.Se
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.RUN_MODE;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.STRING_ENCODING;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.mapEventTypes;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.mapRunModes;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.nextSegmentType;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.toEvent;
 import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
@@ -427,6 +426,25 @@ public class EventConsumerThreadTest
         memento.bb.position( 0 ).limit( 0 );
         memento.setCharset( UTF_8 );
         thread.readEventType( eventTypes, memento );
+    }
+
+    @Test
+    public void shouldMapSegmentToEventType()
+    {
+        Map<Segment, RunMode> map = mapRunModes();
+
+        assertThat( map )
+            .hasSize( 2 );
+
+        byte[] stream = "normal-run".getBytes( US_ASCII );
+        Segment segment = new Segment( stream, 0, stream.length );
+        assertThat( map.get( segment ) )
+            .isEqualTo( NORMAL_RUN );
+
+        stream = "rerun-test-after-failure".getBytes( US_ASCII );
+        segment = new Segment( stream, 0, stream.length );
+        assertThat( map.get( segment ) )
+            .isEqualTo( RERUN_TEST_AFTER_FAILURE );
     }
 
     @Test
