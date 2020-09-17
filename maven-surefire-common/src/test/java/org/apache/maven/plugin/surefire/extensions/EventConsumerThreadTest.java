@@ -5,7 +5,29 @@ import org.apache.maven.plugin.surefire.extensions.EventConsumerThread.Segment;
 import org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType;
 import org.apache.maven.plugin.surefire.log.api.ConsoleLogger;
 import org.apache.maven.surefire.api.booter.ForkedProcessEventType;
+import org.apache.maven.surefire.api.event.ConsoleDebugEvent;
+import org.apache.maven.surefire.api.event.ConsoleErrorEvent;
+import org.apache.maven.surefire.api.event.ConsoleInfoEvent;
+import org.apache.maven.surefire.api.event.ConsoleWarningEvent;
+import org.apache.maven.surefire.api.event.ControlByeEvent;
+import org.apache.maven.surefire.api.event.ControlNextTestEvent;
+import org.apache.maven.surefire.api.event.ControlStopOnNextTestEvent;
 import org.apache.maven.surefire.api.event.Event;
+import org.apache.maven.surefire.api.event.JvmExitErrorEvent;
+import org.apache.maven.surefire.api.event.StandardStreamErrEvent;
+import org.apache.maven.surefire.api.event.StandardStreamErrWithNewLineEvent;
+import org.apache.maven.surefire.api.event.StandardStreamOutEvent;
+import org.apache.maven.surefire.api.event.StandardStreamOutWithNewLineEvent;
+import org.apache.maven.surefire.api.event.SystemPropertyEvent;
+import org.apache.maven.surefire.api.event.TestAssumptionFailureEvent;
+import org.apache.maven.surefire.api.event.TestErrorEvent;
+import org.apache.maven.surefire.api.event.TestFailedEvent;
+import org.apache.maven.surefire.api.event.TestSkippedEvent;
+import org.apache.maven.surefire.api.event.TestStartingEvent;
+import org.apache.maven.surefire.api.event.TestSucceededEvent;
+import org.apache.maven.surefire.api.event.TestsetCompletedEvent;
+import org.apache.maven.surefire.api.event.TestsetStartingEvent;
+import org.apache.maven.surefire.api.report.RunMode;
 import org.apache.maven.surefire.extensions.EventHandler;
 import org.apache.maven.surefire.extensions.ForkNodeArguments;
 import org.apache.maven.surefire.extensions.util.CountdownCloseable;
@@ -20,6 +42,9 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.CharsetDecoder;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import static java.lang.Math.min;
@@ -27,6 +52,9 @@ import static java.nio.charset.CodingErrorAction.REPLACE;
 import static java.nio.charset.StandardCharsets.ISO_8859_1;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Arrays.asList;
+import static java.util.Collections.emptyList;
+import static java.util.Collections.singletonList;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.DATA_INT;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.DATA_STRING;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.END_OF_FRAME;
@@ -34,7 +62,31 @@ import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.Se
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.STRING_ENCODING;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.mapEventTypes;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.nextSegmentType;
+import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.toEvent;
 import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_BYE;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_CONSOLE_DEBUG;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_CONSOLE_ERROR;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_CONSOLE_INFO;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_CONSOLE_WARNING;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_JVM_EXIT_ERROR;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_NEXT_TEST;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_STDERR;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_STDERR_NEW_LINE;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_STDOUT;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_STDOUT_NEW_LINE;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_STOP_ON_NEXT_TEST;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_SYSPROPS;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TESTSET_COMPLETED;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TESTSET_STARTING;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TEST_ASSUMPTIONFAILURE;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TEST_ERROR;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TEST_FAILED;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TEST_SKIPPED;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TEST_STARTING;
+import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_TEST_SUCCEEDED;
+import static org.apache.maven.surefire.api.report.RunMode.NORMAL_RUN;
+import static org.apache.maven.surefire.api.report.RunMode.RERUN_TEST_AFTER_FAILURE;
 import static org.fest.assertions.Assertions.assertThat;
 import static org.powermock.reflect.Whitebox.invokeMethod;
 
@@ -124,7 +176,7 @@ public class EventConsumerThreadTest
         int bytesToDecode = PATTERN2_BYTES.length;
         CharBuffer output = CharBuffer.allocate( 1024 );
         int readBytes =
-            invokeMethod( EventConsumerThread.class, "decode", decoder, input, output, bytesToDecode, true, 0 );
+            invokeMethod( EventConsumerThread.class, "decodeString", decoder, input, output, bytesToDecode, true, 0 );
 
         assertThat( readBytes )
             .isEqualTo( bytesToDecode );
@@ -147,7 +199,7 @@ public class EventConsumerThreadTest
             .position( 90 );
         CharBuffer output = CharBuffer.allocate( 1024 );
         int readBytes =
-            invokeMethod( EventConsumerThread.class, "decode", decoder, input, output, 2, true, 0 );
+            invokeMethod( EventConsumerThread.class, "decodeString", decoder, input, output, 2, true, 0 );
 
         assertThat( readBytes )
             .isEqualTo( 2 );
@@ -163,7 +215,7 @@ public class EventConsumerThreadTest
         ByteBuffer input = ByteBuffer.allocate( 100 );
         int bytesToDecode = 101;
         CharBuffer output = CharBuffer.allocate( 1000 );
-        invokeMethod( EventConsumerThread.class, "decode", decoder, input, output, bytesToDecode, true, 0 );
+        invokeMethod( EventConsumerThread.class, "decodeString", decoder, input, output, bytesToDecode, true, 0 );
     }
 
     @Test( expected = EOFException.class )
@@ -338,7 +390,7 @@ public class EventConsumerThreadTest
 
         ForkedProcessEventType eventType = thread.readEventType( eventTypes, memento );
         assertThat( eventType )
-            .isEqualTo( ForkedProcessEventType.BOOTERCODE_STDOUT );
+            .isEqualTo( BOOTERCODE_STDOUT );
     }
 
     @Test( expected = EOFException.class )
@@ -475,6 +527,26 @@ public class EventConsumerThreadTest
             .isEqualTo( ISO_8859_1 );
     }
 
+    @Test
+    public void shouldSetNonDefaultCharset()
+    {
+        byte[] stream = {};
+        Channel channel = new Channel( stream, 1 );
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+        Memento memento = thread.new Memento();
+
+        memento.setCharset( ISO_8859_1 );
+        assertThat( memento.getDecoder().charset() ).isEqualTo( ISO_8859_1 );
+
+        memento.setCharset( UTF_8 );
+        assertThat( memento.getDecoder().charset() ).isEqualTo( UTF_8 );
+
+        memento.reset();
+        assertThat( memento.getDecoder() ).isNotNull();
+        assertThat( memento.getDecoder().charset() ).isEqualTo( UTF_8 );
+    }
+
     @Test( expected = EventConsumerThread.MalformedFrameException.class )
     public void malformedCharset() throws Exception
     {
@@ -493,22 +565,22 @@ public class EventConsumerThreadTest
     @Test
     public void shouldMapEventTypeToSegmentType()
     {
-        SegmentType[] segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_BYE );
+        SegmentType[] segmentTypes = nextSegmentType( BOOTERCODE_BYE );
         assertThat( segmentTypes )
             .hasSize( 1 )
             .containsOnly( END_OF_FRAME );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_STOP_ON_NEXT_TEST );
+        segmentTypes = nextSegmentType( BOOTERCODE_STOP_ON_NEXT_TEST );
         assertThat( segmentTypes )
             .hasSize( 1 )
             .containsOnly( END_OF_FRAME );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_NEXT_TEST );
+        segmentTypes = nextSegmentType( BOOTERCODE_NEXT_TEST );
         assertThat( segmentTypes )
             .hasSize( 1 )
             .containsOnly( END_OF_FRAME );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_CONSOLE_ERROR );
+        segmentTypes = nextSegmentType( BOOTERCODE_CONSOLE_ERROR );
         assertThat( segmentTypes )
             .hasSize( 5 )
             .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
@@ -518,7 +590,7 @@ public class EventConsumerThreadTest
             .hasSize( 5 )
             .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_CONSOLE_INFO );
+        segmentTypes = nextSegmentType( BOOTERCODE_CONSOLE_INFO );
         assertThat( segmentTypes )
             .hasSize( 3 )
             .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
@@ -533,7 +605,7 @@ public class EventConsumerThreadTest
             .hasSize( 3 )
             .satisfies( new InOrder( STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_STDOUT );
+        segmentTypes = nextSegmentType( BOOTERCODE_STDOUT );
         assertThat( segmentTypes )
             .hasSize( 4 )
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
@@ -553,12 +625,12 @@ public class EventConsumerThreadTest
             .hasSize( 4 )
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, END_OF_FRAME ) );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_SYSPROPS );
+        segmentTypes = nextSegmentType( BOOTERCODE_SYSPROPS );
         assertThat( segmentTypes )
             .hasSize( 5 )
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TESTSET_STARTING );
+        segmentTypes = nextSegmentType( BOOTERCODE_TESTSET_STARTING );
         assertThat( segmentTypes )
             .hasSize( 13 )
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
@@ -576,13 +648,13 @@ public class EventConsumerThreadTest
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
                 DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_SUCCEEDED );
+        segmentTypes = nextSegmentType( BOOTERCODE_TEST_SUCCEEDED );
         assertThat( segmentTypes )
             .hasSize( 13 )
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
                 DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
 
-        segmentTypes = nextSegmentType( ForkedProcessEventType.BOOTERCODE_TEST_FAILED );
+        segmentTypes = nextSegmentType( BOOTERCODE_TEST_FAILED );
         assertThat( segmentTypes )
             .hasSize( 13 )
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
@@ -605,6 +677,264 @@ public class EventConsumerThreadTest
             .hasSize( 13 )
             .satisfies( new InOrder( RUN_MODE, STRING_ENCODING, DATA_STRING, DATA_STRING, DATA_STRING, DATA_STRING,
                 DATA_STRING, DATA_STRING, DATA_INT, DATA_STRING, DATA_STRING, DATA_STRING, END_OF_FRAME ) );
+    }
+
+    @Test
+    public void shouldCreateEvent()
+    {
+        Event event = toEvent( BOOTERCODE_BYE, NORMAL_RUN, emptyList() );
+        assertThat( event )
+            .isInstanceOf( ControlByeEvent.class );
+
+        event = toEvent( BOOTERCODE_STOP_ON_NEXT_TEST, NORMAL_RUN, emptyList() );
+        assertThat( event )
+            .isInstanceOf( ControlStopOnNextTestEvent.class );
+
+        event = toEvent( BOOTERCODE_NEXT_TEST, NORMAL_RUN, emptyList() );
+        assertThat( event )
+            .isInstanceOf( ControlNextTestEvent.class );
+
+        List data = asList( "1", "2", "3" );
+        event = toEvent( BOOTERCODE_CONSOLE_ERROR, NORMAL_RUN, data );
+        assertThat( event )
+            .isInstanceOf( ConsoleErrorEvent.class );
+        ConsoleErrorEvent consoleErrorEvent = (ConsoleErrorEvent) event;
+        assertThat( consoleErrorEvent.getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isEqualTo( "1" );
+        assertThat( consoleErrorEvent.getStackTraceWriter().smartTrimmedStackTrace() )
+            .isEqualTo( "2" );
+        assertThat( consoleErrorEvent.getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "3" );
+
+        data = asList( null, null, null );
+        event = toEvent( BOOTERCODE_CONSOLE_ERROR, NORMAL_RUN, data );
+        assertThat( event )
+            .isInstanceOf( ConsoleErrorEvent.class );
+        consoleErrorEvent = (ConsoleErrorEvent) event;
+        assertThat( consoleErrorEvent.getStackTraceWriter() )
+            .isNull();
+
+        data = asList( "1", "2", "3" );
+        event = toEvent( BOOTERCODE_JVM_EXIT_ERROR, NORMAL_RUN, data );
+        assertThat( event )
+            .isInstanceOf( JvmExitErrorEvent.class );
+        JvmExitErrorEvent jvmExitErrorEvent = (JvmExitErrorEvent) event;
+        assertThat( jvmExitErrorEvent.getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isEqualTo( "1" );
+        assertThat( jvmExitErrorEvent.getStackTraceWriter().smartTrimmedStackTrace() )
+            .isEqualTo( "2" );
+        assertThat( jvmExitErrorEvent.getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "3" );
+
+        data = asList( null, null, null );
+        event = toEvent( BOOTERCODE_JVM_EXIT_ERROR, NORMAL_RUN, data );
+        assertThat( event )
+            .isInstanceOf( JvmExitErrorEvent.class );
+        jvmExitErrorEvent = (JvmExitErrorEvent) event;
+        assertThat( jvmExitErrorEvent.getStackTraceWriter() )
+            .isNull();
+
+        data = singletonList( "m" );
+        event = toEvent( BOOTERCODE_CONSOLE_INFO, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( ConsoleInfoEvent.class );
+        assertThat( ( (ConsoleInfoEvent) event ).getMessage() ).isEqualTo( "m" );
+
+        data = singletonList( "" );
+        event = toEvent( BOOTERCODE_CONSOLE_WARNING, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( ConsoleWarningEvent.class );
+        assertThat( ( (ConsoleWarningEvent) event ).getMessage() ).isEmpty();
+
+        data = singletonList( null );
+        event = toEvent( BOOTERCODE_CONSOLE_DEBUG, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( ConsoleDebugEvent.class );
+        assertThat( ( (ConsoleDebugEvent) event ).getMessage() ).isNull();
+
+        data = singletonList( "m" );
+        event = toEvent( BOOTERCODE_STDOUT, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( StandardStreamOutEvent.class );
+        assertThat( ( (StandardStreamOutEvent) event ).getMessage() ).isEqualTo( "m" );
+        assertThat( ( (StandardStreamOutEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+
+        data = singletonList( null );
+        event = toEvent( BOOTERCODE_STDOUT_NEW_LINE, RERUN_TEST_AFTER_FAILURE, data );
+        assertThat( event ).isInstanceOf( StandardStreamOutWithNewLineEvent.class );
+        assertThat( ( (StandardStreamOutWithNewLineEvent) event ).getMessage() ).isNull();
+        assertThat( ( (StandardStreamOutWithNewLineEvent) event ).getRunMode() ).isEqualTo( RERUN_TEST_AFTER_FAILURE );
+
+        data = singletonList( null );
+        event = toEvent( BOOTERCODE_STDERR, RERUN_TEST_AFTER_FAILURE, data );
+        assertThat( event ).isInstanceOf( StandardStreamErrEvent.class );
+        assertThat( ( (StandardStreamErrEvent) event ).getMessage() ).isNull();
+        assertThat( ( (StandardStreamErrEvent) event ).getRunMode() ).isEqualTo( RERUN_TEST_AFTER_FAILURE );
+
+        data = singletonList( "abc" );
+        event = toEvent( BOOTERCODE_STDERR_NEW_LINE, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( StandardStreamErrWithNewLineEvent.class );
+        assertThat( ( (StandardStreamErrWithNewLineEvent) event ).getMessage() ).isEqualTo( "abc" );
+        assertThat( ( (StandardStreamErrWithNewLineEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+
+        data = asList( "key", "value" );
+        event = toEvent( BOOTERCODE_SYSPROPS, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( SystemPropertyEvent.class );
+        assertThat( ( (SystemPropertyEvent) event ).getKey() ).isEqualTo( "key" );
+        assertThat( ( (SystemPropertyEvent) event ).getValue() ).isEqualTo( "value" );
+        assertThat( ( (SystemPropertyEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+
+        data = asList( "source", "sourceText", "name", "nameText", "group", "message", 5,
+            "traceMessage", "smartTrimmedStackTrace", "stackTrace" );
+        event = toEvent( BOOTERCODE_TESTSET_STARTING, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( TestsetStartingEvent.class );
+        assertThat( ( (TestsetStartingEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getSourceText() ).isEqualTo( "sourceText" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getNameText() ).isEqualTo( "nameText" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getGroup() ).isEqualTo( "group" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getMessage() ).isEqualTo( "message" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getElapsed() ).isEqualTo( 5 );
+        assertThat( ( (TestsetStartingEvent) event )
+            .getReportEntry().getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isEqualTo( "traceMessage" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getStackTraceWriter().smartTrimmedStackTrace() )
+            .isEqualTo( "smartTrimmedStackTrace" );
+        assertThat( ( (TestsetStartingEvent) event ).getReportEntry().getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "stackTrace" );
+
+        data = asList( "source", "sourceText", "name", "nameText", "group", null, 5,
+            "traceMessage", "smartTrimmedStackTrace", "stackTrace" );
+        event = toEvent( BOOTERCODE_TESTSET_COMPLETED, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( TestsetCompletedEvent.class );
+        assertThat( ( (TestsetCompletedEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getSourceText() ).isEqualTo( "sourceText" );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getNameText() ).isEqualTo( "nameText" );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getGroup() ).isEqualTo( "group" );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getMessage() ).isNull();
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getElapsed() ).isEqualTo( 5 );
+        assertThat( ( (TestsetCompletedEvent) event )
+            .getReportEntry().getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isEqualTo( "traceMessage" );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getStackTraceWriter().smartTrimmedStackTrace() )
+            .isEqualTo( "smartTrimmedStackTrace" );
+        assertThat( ( (TestsetCompletedEvent) event ).getReportEntry().getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "stackTrace" );
+
+        data = asList( "source", "sourceText", "name", "nameText", "group", "message", 5,
+            null, "smartTrimmedStackTrace", "stackTrace" );
+        event = toEvent( BOOTERCODE_TEST_STARTING, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( TestStartingEvent.class );
+        assertThat( ( (TestStartingEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getSourceText() ).isEqualTo( "sourceText" );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getNameText() ).isEqualTo( "nameText" );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getGroup() ).isEqualTo( "group" );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getMessage() ).isEqualTo( "message" );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getElapsed() ).isEqualTo( 5 );
+        assertThat( ( (TestStartingEvent) event )
+            .getReportEntry().getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isNull();
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getStackTraceWriter().smartTrimmedStackTrace() )
+            .isEqualTo( "smartTrimmedStackTrace" );
+        assertThat( ( (TestStartingEvent) event ).getReportEntry().getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "stackTrace" );
+
+        data = asList( "source", "sourceText", "name", "nameText", "group", "message", 5, null, null, null );
+        event = toEvent( BOOTERCODE_TEST_SUCCEEDED, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( TestSucceededEvent.class );
+        assertThat( ( (TestSucceededEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getSourceText() ).isEqualTo( "sourceText" );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getNameText() ).isEqualTo( "nameText" );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getGroup() ).isEqualTo( "group" );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getMessage() ).isEqualTo( "message" );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getElapsed() ).isEqualTo( 5 );
+        assertThat( ( (TestSucceededEvent) event ).getReportEntry().getStackTraceWriter() ).isNull();
+
+        data = asList( "source", null, "name", null, "group", null, 5,
+            "traceMessage", "smartTrimmedStackTrace", "stackTrace" );
+        event = toEvent( BOOTERCODE_TEST_FAILED, RERUN_TEST_AFTER_FAILURE, data );
+        assertThat( event ).isInstanceOf( TestFailedEvent.class );
+        assertThat( ( (TestFailedEvent) event ).getRunMode() ).isEqualTo( RERUN_TEST_AFTER_FAILURE );
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getSourceText() ).isNull();
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getNameText() ).isNull();
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getGroup() ).isEqualTo( "group" );
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getMessage() ).isNull();
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getElapsed() ).isEqualTo( 5 );
+        assertThat( ( (TestFailedEvent) event )
+            .getReportEntry().getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isEqualTo( "traceMessage" );
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getStackTraceWriter().smartTrimmedStackTrace() )
+            .isEqualTo( "smartTrimmedStackTrace" );
+        assertThat( ( (TestFailedEvent) event ).getReportEntry().getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "stackTrace" );
+
+        data = asList( "source", null, "name", null, null, null, 5, null, null, "stackTrace" );
+        event = toEvent( BOOTERCODE_TEST_SKIPPED, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( TestSkippedEvent.class );
+        assertThat( ( (TestSkippedEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+        assertThat( ( (TestSkippedEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestSkippedEvent) event ).getReportEntry().getSourceText() ).isNull();
+        assertThat( ( (TestSkippedEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestSkippedEvent) event ).getReportEntry().getNameText() ).isNull();
+        assertThat( ( (TestSkippedEvent) event ).getReportEntry().getGroup() ).isNull();
+        assertThat( ( (TestSkippedEvent) event ).getReportEntry().getMessage() ).isNull();
+        assertThat( ( (TestSkippedEvent) event ).getReportEntry().getElapsed() ).isEqualTo( 5 );
+        assertThat( ( (TestSkippedEvent) event )
+            .getReportEntry().getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isNull();
+        assertThat( ( (TestSkippedEvent) event )
+            .getReportEntry().getStackTraceWriter().smartTrimmedStackTrace() )
+            .isNull();
+        assertThat( ( (TestSkippedEvent) event )
+            .getReportEntry().getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "stackTrace" );
+
+        data = asList( "source", null, "name", "nameText", null, null, 0, null, null, "stackTrace" );
+        event = toEvent( BOOTERCODE_TEST_ERROR, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( TestErrorEvent.class );
+        assertThat( ( (TestErrorEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+        assertThat( ( (TestErrorEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestErrorEvent) event ).getReportEntry().getSourceText() ).isNull();
+        assertThat( ( (TestErrorEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestErrorEvent) event ).getReportEntry().getNameText() ).isEqualTo( "nameText" );
+        assertThat( ( (TestErrorEvent) event ).getReportEntry().getGroup() ).isNull();
+        assertThat( ( (TestErrorEvent) event ).getReportEntry().getMessage() ).isNull();
+        assertThat( ( (TestErrorEvent) event ).getReportEntry().getElapsed() ).isZero();
+        assertThat( ( (TestErrorEvent) event )
+            .getReportEntry().getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isNull();
+        assertThat( ( (TestErrorEvent) event )
+            .getReportEntry().getStackTraceWriter().smartTrimmedStackTrace() )
+            .isNull();
+        assertThat( ( (TestErrorEvent) event )
+            .getReportEntry().getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "stackTrace" );
+
+        data = asList( "source", null, "name", null, "group", null, 5, null, null, "stackTrace" );
+        event = toEvent( BOOTERCODE_TEST_ASSUMPTIONFAILURE, NORMAL_RUN, data );
+        assertThat( event ).isInstanceOf( TestAssumptionFailureEvent.class );
+        assertThat( ( (TestAssumptionFailureEvent) event ).getRunMode() ).isEqualTo( NORMAL_RUN );
+        assertThat( ( (TestAssumptionFailureEvent) event ).getReportEntry().getSourceName() ).isEqualTo( "source" );
+        assertThat( ( (TestAssumptionFailureEvent) event ).getReportEntry().getSourceText() ).isNull();
+        assertThat( ( (TestAssumptionFailureEvent) event ).getReportEntry().getName() ).isEqualTo( "name" );
+        assertThat( ( (TestAssumptionFailureEvent) event ).getReportEntry().getNameText() ).isNull();
+        assertThat( ( (TestAssumptionFailureEvent) event ).getReportEntry().getGroup() ).isEqualTo( "group" );
+        assertThat( ( (TestAssumptionFailureEvent) event ).getReportEntry().getMessage() ).isNull();
+        assertThat( ( (TestAssumptionFailureEvent) event ).getReportEntry().getElapsed() ).isEqualTo( 5 );
+        assertThat( ( (TestAssumptionFailureEvent) event )
+            .getReportEntry().getStackTraceWriter().getThrowable().getLocalizedMessage() )
+            .isNull();
+        assertThat( ( (TestAssumptionFailureEvent) event )
+            .getReportEntry().getStackTraceWriter().smartTrimmedStackTrace() )
+            .isNull();
+        assertThat( ( (TestAssumptionFailureEvent) event )
+            .getReportEntry().getStackTraceWriter().writeTraceToString() )
+            .isEqualTo( "stackTrace" );
     }
 
     private static class Channel implements ReadableByteChannel

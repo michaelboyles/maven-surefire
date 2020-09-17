@@ -463,7 +463,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         }
     }
 
-    protected Event toEvent( ForkedProcessEventType eventType, RunMode runMode, List<Object> args )
+    static Event toEvent( ForkedProcessEventType eventType, RunMode runMode, List<Object> args )
     {
         switch ( eventType )
         {
@@ -576,8 +576,9 @@ public class EventConsumerThread extends CloseableDaemonThread
         return false;
     }
 
-    private static int decode( @Nonnull CharsetDecoder decoder, @Nonnull ByteBuffer input, @Nonnull CharBuffer output,
-                               @Nonnegative int bytesToDecode, boolean endOfInput, @Nonnegative int errorStreamFrom )
+    private static int decodeString( @Nonnull CharsetDecoder decoder, @Nonnull ByteBuffer input,
+                                     @Nonnull CharBuffer output, @Nonnegative int bytesToDecode,
+                                     boolean endOfInput, @Nonnegative int errorStreamFrom )
         throws MalformedFrameException
     {
         int limit = input.limit();
@@ -614,7 +615,7 @@ public class EventConsumerThread extends CloseableDaemonThread
             {
                 boolean endOfChunk = output.remaining() >= bytesToRead;
                 boolean endOfOutput = isLastChunk && endOfChunk;
-                int readInputBytes = decode( memento.getDecoder(), input, output, bytesToDecode, endOfOutput,
+                int readInputBytes = decodeString( memento.getDecoder(), input, output, bytesToDecode, endOfOutput,
                     memento.line.positionByteBuffer );
                 bytesToDecode -= readInputBytes;
                 countDecodedBytes += readInputBytes;
