@@ -257,7 +257,14 @@ public class EventConsumerThread extends CloseableDaemonThread
             }
             catch ( RuntimeException e )
             {
+                printCorruptedStream( memento );
                 arguments.dumpStreamException( e );
+            }
+            catch ( IOException e )
+            {
+                printCorruptedStream( memento );
+                printRemainingStream( memento );
+                throw e;
             }
             finally
             {
@@ -516,6 +523,24 @@ public class EventConsumerThread extends CloseableDaemonThread
         }
     }
 
+    private static void printCorruptedStream( Memento memento )
+    {
+        if ( memento.bb.hasRemaining() )
+        {
+            memento.line.write( memento.bb, memento.bb.position(), memento.bb.remaining() );
+        }
+    }
+
+    /**
+     * Print the last string which has not been finished by a new line character.
+     *
+     * @param memento current memento object
+     */
+    private static void printRemainingStream( Memento memento )
+    {
+        memento.line.printExistingLine();
+    }
+
     @Nonnull
     private static TestSetReportEntry toReportEntry( List<Object> args )
     {
@@ -744,14 +769,15 @@ public class EventConsumerThread extends CloseableDaemonThread
             }
         }
 
-        boolean isEmpty()
+        private boolean isEmpty()
         {
-            return count != 0;
+            return count == 0;
         }
 
-        String toString( Charset charset )
+        @Override
+        public String toString()
         {
-            return new String( buffer, 0, count, charset );
+            return new String( buffer, 0, count, DEFAULT_STREAM_ENCODING );
         }
 
         private void ensureCapacity( int addCapacity )
@@ -770,14 +796,14 @@ public class EventConsumerThread extends CloseableDaemonThread
             }
         }
 
-        private void printExistingLine()
+        void printExistingLine()
         {
             if ( isEmpty() )
             {
                 return;
             }
             ConsoleLogger logger = arguments.getConsoleLogger();
-            String s = toString( DEFAULT_STREAM_ENCODING );
+            String s = toString();
             if ( s.contains( PRINTABLE_JVM_NATIVE_STREAM ) )
             {
                 if ( logger.isDebugEnabled() )
@@ -800,16 +826,15 @@ public class EventConsumerThread extends CloseableDaemonThread
                 {
                     logger.error( s );
                 }
-                String msg = "Corrupted STDOUT by directly writing to native stream in forked JVM "
-                    + arguments.getForkChannelId() + ".";
-                File dumpFile = arguments.dumpStreamText( msg + " Stream '" + s + "'." );
-                arguments.logWarningAtEnd(
-                    msg + " See FAQ web page and the dump file " + dumpFile.getAbsolutePath() );
-
-                if ( logger.isDebugEnabled() )
+                else if ( logger.isDebugEnabled() )
                 {
                     logger.debug( s );
                 }
+
+                String msg = "Corrupted STDOUT by directly writing to native stream in forked JVM "
+                    + arguments.getForkChannelId() + ".";
+                File dumpFile = arguments.dumpStreamText( msg + " Stream '" + s + "'." );
+                arguments.logWarningAtEnd( msg + " See FAQ web page and the dump file " + dumpFile.getAbsolutePath() );
             }
         }
     }
@@ -922,7 +947,7 @@ public class EventConsumerThread extends CloseableDaemonThread
 
         boolean hasValidPositions()
         {
-            return ( readFrom == NO_POSITION || readTo == NO_POSITION ) && readTo - readFrom > 0;
+            return readFrom != NO_POSITION && readTo != NO_POSITION && readTo - readFrom > 0;
         }
     }
 }
