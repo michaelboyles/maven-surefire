@@ -211,8 +211,11 @@ public class EventConsumerThread extends CloseableDaemonThread
             try
             {
                 ForkedProcessEventType eventType = readEventType( eventTypes, memento );
+                if ( eventType == null )
+                {
+                    throw new MalformedFrameException( memento.line.positionByteBuffer, memento.bb.position() );
+                }
                 RunMode runMode = null;
-
                 for ( SegmentType segmentType : nextSegmentType( eventType ) )
                 {
                     if ( segmentType == null )
@@ -232,7 +235,7 @@ public class EventConsumerThread extends CloseableDaemonThread
                             memento.data.add( readString( memento ) );
                             break;
                         case DATA_INT:
-                            memento.data.add( readInt( memento ) );
+                            memento.data.add( readInteger( memento ) );
                             break;
                         case END_OF_FRAME:
                             memento.line.positionByteBuffer = memento.bb.position();
@@ -257,12 +260,10 @@ public class EventConsumerThread extends CloseableDaemonThread
             }
             catch ( RuntimeException e )
             {
-                printCorruptedStream( memento );
                 arguments.dumpStreamException( e );
             }
             catch ( IOException e )
             {
-                printCorruptedStream( memento );
                 printRemainingStream( memento );
                 throw e;
             }
@@ -287,8 +288,6 @@ public class EventConsumerThread extends CloseableDaemonThread
     protected String readString( Memento memento ) throws IOException, MalformedFrameException
     {
         memento.cb.clear();
-        read( memento, INT_LENGTH + DELIMITER_LENGTH );
-
         int readCount = readInt( memento );
         read( memento, readCount + DELIMITER_LENGTH );
 
@@ -525,9 +524,12 @@ public class EventConsumerThread extends CloseableDaemonThread
 
     private static void printCorruptedStream( Memento memento )
     {
-        if ( memento.bb.hasRemaining() )
+        ByteBuffer bb = memento.bb;
+        if ( bb.hasRemaining() )
         {
-            memento.line.write( memento.bb, memento.bb.position(), memento.bb.remaining() );
+            int bytesToWrite = bb.remaining();
+            memento.line.write( bb, bb.position(), bytesToWrite );
+            bb.position( bb.position() + bytesToWrite );
         }
     }
 
@@ -538,7 +540,9 @@ public class EventConsumerThread extends CloseableDaemonThread
      */
     private static void printRemainingStream( Memento memento )
     {
+        printCorruptedStream( memento );
         memento.line.printExistingLine();
+        memento.line.count = 0;
     }
 
     @Nonnull
@@ -670,10 +674,23 @@ public class EventConsumerThread extends CloseableDaemonThread
 
     protected int readInt( Memento memento ) throws IOException, MalformedFrameException
     {
-        read( memento, INT_LENGTH );
+        read( memento, INT_LENGTH + DELIMITER_LENGTH );
         int i = memento.bb.getInt();
         checkDelimiter( memento );
         return i;
+    }
+
+    protected Integer readInteger( Memento memento ) throws IOException, MalformedFrameException
+    {
+        read( memento, BYTE_LENGTH );
+        boolean isNullObject = memento.bb.get() == 0;
+        if ( isNullObject )
+        {
+            read( memento, DELIMITER_LENGTH );
+            checkDelimiter( memento );
+            return null;
+        }
+        return readInt( memento );
     }
 
     private static String toString( List<String> strings )

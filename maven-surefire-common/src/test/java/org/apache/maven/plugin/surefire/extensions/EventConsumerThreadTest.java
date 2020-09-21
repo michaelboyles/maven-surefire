@@ -38,6 +38,7 @@ import javax.annotation.Nonnull;
 import java.io.Closeable;
 import java.io.EOFException;
 import java.io.File;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.ReadableByteChannel;
@@ -217,6 +218,48 @@ public class EventConsumerThreadTest
         invokeMethod( EventConsumerThread.class, "decodeString", decoder, input, output, bytesToDecode, true, 0 );
     }
 
+    @Test
+    public void shouldReadInt() throws Exception
+    {
+        Channel channel = new Channel( new byte[] {0x01, 0x02, 0x03, 0x04, ':'}, 1 );
+
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        assertThat( thread.readInt( memento ) )
+            .isEqualTo( new BigInteger( new byte[] {0x01, 0x02, 0x03, 0x04} ).intValue() );
+    }
+
+    @Test
+    public void shouldReadInteger() throws Exception
+    {
+        Channel channel = new Channel( new byte[] {(byte) 0xff, 0x01, 0x02, 0x03, 0x04, ':'}, 1 );
+
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        assertThat( thread.readInteger( memento ) )
+            .isEqualTo( new BigInteger( new byte[] {0x01, 0x02, 0x03, 0x04} ).intValue() );
+    }
+
+    @Test
+    public void shouldReadNullInteger() throws Exception
+    {
+        Channel channel = new Channel( new byte[] {(byte) 0x00, ':'}, 1 );
+
+        EventConsumerThread thread = new EventConsumerThread( "t", channel,
+            new MockEventHandler<Event>(), COUNTDOWN_CLOSEABLE, new MockForkNodeArguments() );
+
+        Memento memento = thread.new Memento();
+        memento.bb.position( 0 ).limit( 0 );
+        assertThat( thread.readInteger( memento ) )
+            .isNull();
+    }
+
     @Test( expected = EOFException.class )
     public void shouldNotReadString() throws Exception
     {
@@ -366,7 +409,7 @@ public class EventConsumerThreadTest
             chars.clear();
         }
         long l2 = System.currentTimeMillis();
-        System.out.println( "decoded 100 bytes within " + ( l2 - l1 ) );
+        System.out.println( "decoded 100 bytes within " + ( l2 - l1 ) + " millis (10 million cycles)" );
         assertThat( s )
             .isEqualTo( PATTERN1 );
     }
