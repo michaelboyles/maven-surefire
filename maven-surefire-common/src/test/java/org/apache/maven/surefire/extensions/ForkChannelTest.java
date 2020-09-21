@@ -86,6 +86,13 @@ public class ForkChannelTest
                 return new File( "" );
             }
 
+            @Nonnull
+            @Override
+            public File dumpStreamException( Throwable t )
+            {
+                return new File( "" );
+            }
+
             @Override
             public void logWarningAtEnd( @Nonnull String text )
             {
