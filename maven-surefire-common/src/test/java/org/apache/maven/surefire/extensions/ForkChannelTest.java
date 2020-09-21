@@ -88,7 +88,7 @@ public class ForkChannelTest
 
             @Nonnull
             @Override
-            public File dumpStreamException( Throwable t )
+            public File dumpStreamException( @Nonnull Throwable t )
             {
                 return new File( "" );
             }

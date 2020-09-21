@@ -76,8 +76,8 @@ import static java.nio.charset.CodingErrorAction.REPLACE;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.StreamReadStatus.OVERFLOW;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.StreamReadStatus.UNDERFLOW;
-import static org.apache.maven.surefire.api.booter.Constants.MAGIC_NUMBER;
 import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
+import static org.apache.maven.surefire.api.booter.Constants.MAGIC_NUMBER_BYTES;
 import static org.apache.maven.surefire.api.report.CategorizedReportEntry.reportEntry;
 
 /**
@@ -146,7 +146,6 @@ public class EventConsumerThread extends CloseableDaemonThread
     };
 
     private static final int BUFFER_SIZE = 1024;
-    private static final byte[] MAGIC_NUMBER_BYTES = MAGIC_NUMBER.getBytes( US_ASCII );
     private static final byte[] DEFAULT_STREAM_ENCODING_BYTES = DEFAULT_STREAM_ENCODING.name().getBytes( US_ASCII );
     private static final int DELIMITER_LENGTH = 1;
     private static final int BYTE_LENGTH = 1;
@@ -314,7 +313,6 @@ public class EventConsumerThread extends CloseableDaemonThread
     @Nonnull
     protected Segment readSegment( Memento memento ) throws IOException, MalformedFrameException
     {
-        read( memento, BYTE_LENGTH + DELIMITER_LENGTH );
         int readCount = readByte( memento ) & 0xff;
         read( memento, readCount + DELIMITER_LENGTH );
         ByteBuffer bb = memento.bb;
@@ -327,10 +325,9 @@ public class EventConsumerThread extends CloseableDaemonThread
     @Nonnull
     protected Charset readCharset( Memento memento ) throws IOException, MalformedFrameException
     {
-        read( memento, BYTE_LENGTH + DELIMITER_LENGTH );
-        ByteBuffer bb = memento.bb;
         int length = readByte( memento ) & 0xff;
         read( memento, length + DELIMITER_LENGTH );
+        ByteBuffer bb = memento.bb;
         byte[] array = bb.array();
         int offset = bb.arrayOffset() + bb.position();
         bb.position( bb.position() + length );
@@ -666,7 +663,7 @@ public class EventConsumerThread extends CloseableDaemonThread
 
     protected byte readByte( Memento memento ) throws IOException, MalformedFrameException
     {
-        read( memento, BYTE_LENGTH );
+        read( memento, BYTE_LENGTH + DELIMITER_LENGTH );
         byte b = memento.bb.get();
         checkDelimiter( memento );
         return b;
@@ -723,7 +720,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         Map<Segment, RunMode> map = new HashMap<>();
         for ( RunMode e : RunMode.values() )
         {
-            byte[] array = e.geRunName().getBytes( US_ASCII );
+            byte[] array = e.geRunmode().getBytes( US_ASCII );
             map.put( new Segment( array, 0, array.length ), e );
         }
         return map;
@@ -875,6 +872,7 @@ public class EventConsumerThread extends CloseableDaemonThread
         void reset()
         {
             currentDecoder = null;
+            data.clear();
         }
 
         CharsetDecoder getDecoder()

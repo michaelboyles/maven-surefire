@@ -45,6 +45,8 @@ import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.CharsetDecoder;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.lang.Math.min;
 import static java.nio.charset.CodingErrorAction.REPLACE;
@@ -52,6 +54,7 @@ import static java.nio.charset.StandardCharsets.ISO_8859_1;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
+import static java.util.Arrays.copyOfRange;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.apache.maven.plugin.surefire.extensions.EventConsumerThread.SegmentType.DATA_INT;
@@ -412,6 +415,87 @@ public class EventConsumerThreadTest
         System.out.println( "decoded 100 bytes within " + ( l2 - l1 ) + " millis (10 million cycles)" );
         assertThat( s )
             .isEqualTo( PATTERN1 );
+    }
+
+    @Test( timeout = 60_000L )
+    public void performanceTest() throws Exception
+    {
+        final long[] staredAt = {0};
+        final long[] finishedAt = {0};
+        final AtomicInteger calls = new AtomicInteger();
+        final int totalCalls = 1_000_000; // 400_000; // 1_000_000; // 10_000_000;
+
+        EventHandler<Event> handler = new EventHandler<Event>()
+        {
+            @Override
+            public void handleEvent( @Nonnull Event event )
+            {
+                if ( staredAt[0] == 0 )
+                {
+                    staredAt[0] = System.currentTimeMillis();
+                }
+
+                if ( calls.incrementAndGet() == totalCalls )
+                {
+                    finishedAt[0] = System.currentTimeMillis();
+                }
+            }
+        };
+
+        final ByteBuffer event = ByteBuffer.allocate( 192 );
+        event.put( ":maven-surefire-event:".getBytes( UTF_8 ) );
+        event.put( (byte) 14 );
+        event.put( ":std-out-stream:".getBytes( UTF_8 ) );
+        event.put( (byte) 10 );
+        event.put( ":normal-run:".getBytes( UTF_8 ) );
+        event.put( (byte) 5 );
+        event.put( ":UTF-8:".getBytes( UTF_8 ) );
+        event.putInt( 100 );
+        event.put(
+            ":0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789:"
+                .getBytes( UTF_8 ) );
+
+        event.flip();
+        byte[] frame = copyOfRange( event.array(), event.arrayOffset(), event.arrayOffset() + event.remaining() );
+        ReadableByteChannel channel = new Channel( frame, 1024 )
+        {
+            private int countRounds;
+
+            @Override
+            public int read( ByteBuffer dst )
+            {
+                int length = super.read( dst );
+                if ( length == -1 && countRounds < totalCalls )
+                {
+                    i = 0;
+                    length = super.read( dst );
+                    countRounds++;
+                }
+                return length;
+            }
+        };
+
+        EventConsumerThread thread = new EventConsumerThread( "t", channel, handler,
+            new CountdownCloseable( new MockCloseable(), 1 ), new MockForkNodeArguments() );
+
+        TimeUnit.SECONDS.sleep( 2 );
+        System.gc();
+        TimeUnit.SECONDS.sleep( 5 );
+
+        System.out.println( "Staring the event thread..." );
+
+        thread.start();
+        thread.join();
+
+        long execTime = finishedAt[0] - staredAt[0];
+        System.out.println( execTime );
+
+        // 0.6 seconds while using the encoder/decoder
+        assertThat( execTime )
+            .describedAs( "The performance test should assert 1.0s of read time. "
+                + "The limit 3.6s guarantees that the read time does not exceed this limit on overloaded CPU." )
+            .isPositive()
+            .isLessThanOrEqualTo( 3_600L );
     }
 
     @Test
@@ -1002,7 +1086,7 @@ public class EventConsumerThreadTest
     {
         private final byte[] bytes;
         private final int chunkSize;
-        private int i;
+        protected int i;
 
         public Channel( byte[] bytes, int chunkSize )
         {
@@ -1082,7 +1166,7 @@ public class EventConsumerThreadTest
 
         @Nonnull
         @Override
-        public File dumpStreamException( Throwable t )
+        public File dumpStreamException( @Nonnull Throwable t )
         {
             return null;
         }

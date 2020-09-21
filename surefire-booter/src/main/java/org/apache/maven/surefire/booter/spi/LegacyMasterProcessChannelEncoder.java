@@ -42,8 +42,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static java.lang.Math.ceil;
 import static java.nio.CharBuffer.wrap;
 import static java.util.Objects.requireNonNull;
-import static org.apache.maven.surefire.api.booter.Constants.MAGIC_NUMBER;
 import static org.apache.maven.surefire.api.booter.Constants.DEFAULT_STREAM_ENCODING;
+import static org.apache.maven.surefire.api.booter.Constants.MAGIC_NUMBER_BYTES;
 import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_BYE;
 import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_CONSOLE_DEBUG;
 import static org.apache.maven.surefire.api.booter.ForkedProcessEventType.BOOTERCODE_CONSOLE_ERROR;
@@ -442,8 +442,7 @@ public class LegacyMasterProcessChannelEncoder implements MasterProcessChannelEn
 
         int counterPosition = result.position();
 
-        result.put( INT_BINARY );
-        encoder.encode( wrap( ":" ), result, true );
+        result.put( INT_BINARY ).put( (byte) ':' );
 
         int msgStart = result.position();
         encoder.encode( wrap( nonNullString ), result, true );
@@ -453,7 +452,7 @@ public class LegacyMasterProcessChannelEncoder implements MasterProcessChannelEn
 
         result.position( msgEnd );
 
-        encoder.encode( wrap( ":" ), result, true );
+        result.put( (byte) ':' );
     }
 
     private static void encodeInteger( CharsetEncoder encoder, ByteBuffer result, Integer i )
@@ -466,7 +465,7 @@ public class LegacyMasterProcessChannelEncoder implements MasterProcessChannelEn
         {
             result.put( (byte) 0xff ).putInt( i );
         }
-        encoder.encode( wrap( ":" ), result, true );
+        result.put( (byte) ':' );
     }
 
     static void encodeHeader( CharsetEncoder encoder, ByteBuffer result, ForkedProcessEventType operation,
@@ -475,9 +474,9 @@ public class LegacyMasterProcessChannelEncoder implements MasterProcessChannelEn
         encodeOpcode( encoder, result, operation, runMode );
         String charsetName = encoder.charset().name();
         result.put( (byte) charsetName.length() );
-        encoder.encode( wrap( ":" ), result, true );
+        result.put( (byte) ':' );
         encoder.encode( wrap( charsetName ), result, true );
-        encoder.encode( wrap( ":" ), result, true );
+        result.put( (byte) ':' );
     }
 
     /**
@@ -490,22 +489,22 @@ public class LegacyMasterProcessChannelEncoder implements MasterProcessChannelEn
     static void encodeOpcode( CharsetEncoder encoder, ByteBuffer result, ForkedProcessEventType operation,
                               RunMode runMode )
     {
-        encoder.encode( wrap( ":" ), result, true );
-        encoder.encode( wrap( MAGIC_NUMBER ), result, true );
-        encoder.encode( wrap( ":" ), result, true );
-        String opcodeName = operation.getOpcode();
-        result.put( (byte) opcodeName.length() );
-        encoder.encode( wrap( ":" ), result, true );
-        encoder.encode( wrap( opcodeName ), result, true );
-        encoder.encode( wrap( ":" ), result, true );
+        result.put( (byte) ':' );
+        result.put( MAGIC_NUMBER_BYTES );
+        result.put( (byte) ':' );
+        byte[] opcode = operation.getOpcodeBinary();
+        result.put( (byte) opcode.length );
+        result.put( (byte) ':' );
+        result.put( opcode );
+        result.put( (byte) ':' );
 
         if ( runMode != null )
         {
-            String runModeName = runMode.geRunName();
-            result.put( (byte) runModeName.length() );
-            encoder.encode( wrap( ":" ), result, true );
-            encoder.encode( wrap( runModeName ), result, true );
-            encoder.encode( wrap( ":" ), result, true );
+            byte[] runmode = runMode.getRunmodeBinary();
+            result.put( (byte) runmode.length );
+            result.put( (byte) ':' );
+            result.put( runmode );
+            result.put( (byte) ':' );
         }
     }
 
@@ -531,12 +530,12 @@ public class LegacyMasterProcessChannelEncoder implements MasterProcessChannelEn
 
         // one delimiter character ':' + <string> + one delimiter character ':' +
         // one byte + one delimiter character ':' + <string> + one delimiter character ':'
-        int lengthOfMetadata = 1 + MAGIC_NUMBER.length() + 1 + 1 + 1 + eventType.getOpcode().length() + 1;
+        int lengthOfMetadata = 1 + MAGIC_NUMBER_BYTES.length + 1 + 1 + 1 + eventType.getOpcode().length() + 1;
 
         if ( runMode != null )
         {
             // one byte of length + one delimiter character ':' + <string> + one delimiter character ':'
-            lengthOfMetadata += 1 + 1 + runMode.geRunName().length() + 1;
+            lengthOfMetadata += 1 + 1 + runMode.geRunmode().length() + 1;
         }
 
         if ( encoder != null )

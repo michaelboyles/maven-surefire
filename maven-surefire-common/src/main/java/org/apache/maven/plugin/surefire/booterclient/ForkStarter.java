@@ -914,7 +914,7 @@ public class ForkStarter
 
         @Nonnull
         @Override
-        public File dumpStreamException( Throwable t )
+        public File dumpStreamException( @Nonnull Throwable t )
         {
             return InPluginProcessDumpSingleton.getSingleton()
                 .dumpStreamException( t, t.getLocalizedMessage(), dumpLogDir, forkChannelId );

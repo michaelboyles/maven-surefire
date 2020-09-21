@@ -21,6 +21,7 @@ package org.apache.maven.surefire.api.booter;
 
 import java.nio.charset.Charset;
 
+import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
@@ -29,5 +30,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public final class Constants
 {
     public static final String MAGIC_NUMBER = "maven-surefire-event";
+    public static final byte[] MAGIC_NUMBER_BYTES = MAGIC_NUMBER.getBytes( US_ASCII );
     public static final Charset DEFAULT_STREAM_ENCODING = UTF_8;
 }
