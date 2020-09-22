@@ -238,7 +238,10 @@ public class EventConsumerThread extends CloseableDaemonThread
                             break;
                         case END_OF_FRAME:
                             memento.line.positionByteBuffer = memento.bb.position();
-                            eventHandler.handleEvent( toEvent( eventType, runMode, memento.data ) );
+                            if ( !disabled )
+                            {
+                                eventHandler.handleEvent( toEvent( eventType, runMode, memento.data ) );
+                            }
                             break;
                         default:
                             memento.line.positionByteBuffer = NO_POSITION;
