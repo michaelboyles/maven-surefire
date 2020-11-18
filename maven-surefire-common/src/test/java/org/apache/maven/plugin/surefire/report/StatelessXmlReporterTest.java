@@ -105,7 +105,11 @@ public class StatelessXmlReporterTest
                         false, false, false, false );
         reporter.cleanTestHistoryMap();
 
-        ReportEntry reportEntry = new SimpleReportEntry( getClass().getName(), null, getClass().getName(), null, 12 );
+        ReportEntry reportEntry = SimpleReportEntry.builder()
+            .source( getClass().getName(), null )
+            .name( getClass().getName(), null )
+            .elapsed( 12 )
+            .build();
         WrappedReportEntry testSetReportEntry = new WrappedReportEntry( reportEntry, ReportEntryType.SUCCESS,
                 12, null, null, systemProps() );
         stats.testSucceeded( testSetReportEntry );
@@ -120,7 +124,11 @@ public class StatelessXmlReporterTest
     public void testAllFieldsSerialized()
             throws IOException
     {
-        ReportEntry reportEntry = new SimpleReportEntry( getClass().getName(), null, TEST_ONE, null, 12 );
+        ReportEntry reportEntry = SimpleReportEntry.builder()
+            .source( getClass().getName(), null )
+            .name( TEST_ONE, null )
+            .elapsed( 12 )
+            .build();
         WrappedReportEntry testSetReportEntry =
                 new WrappedReportEntry( reportEntry, ReportEntryType.SUCCESS, 12, null, null, systemProps() );
         expectedReportFile = new File( reportDir, "TEST-" + getClass().getName() + ".xml" );
@@ -147,8 +155,14 @@ public class StatelessXmlReporterTest
 
         stdErr.write( stdErrPrefix + "?&-&amp;&#163;\u0020\u0000\u001F", false );
         WrappedReportEntry t2 =
-                new WrappedReportEntry( new SimpleReportEntry( getClass().getName(), null, TEST_TWO, null,
-                        stackTraceWriter, 13 ), ReportEntryType.ERROR, 13, stdOut, stdErr );
+                new WrappedReportEntry(
+                        SimpleReportEntry.builder()
+                                .source( getClass().getName(), null )
+                                .name( TEST_TWO, null )
+                                .stackTraceWriterAndMessage( stackTraceWriter )
+                                .elapsed( 13 )
+                                .build(),
+                        ReportEntryType.ERROR, 13, stdOut, stdErr );
 
         stats.testSucceeded( t2 );
         StatelessXmlReporter reporter = new StatelessXmlReporter( reportDir, null, false, 0,
@@ -189,7 +203,12 @@ public class StatelessXmlReporterTest
             throws IOException
     {
         WrappedReportEntry testSetReportEntry =
-                new WrappedReportEntry( new SimpleReportEntry( getClass().getName(), null, TEST_ONE, null, 12 ),
+                new WrappedReportEntry(
+                        SimpleReportEntry.builder()
+                                .source( getClass().getName(), null )
+                                .name( TEST_ONE, null )
+                                .elapsed( 12 )
+                                .build(),
                         ReportEntryType.SUCCESS, 12, null, null, systemProps() );
         expectedReportFile = new File( reportDir, "TEST-" + getClass().getName() + ".xml" );
 
@@ -205,24 +224,44 @@ public class StatelessXmlReporterTest
         String secondRunErr = "second run err";
 
         WrappedReportEntry testTwoFirstError =
-                new WrappedReportEntry( new SimpleReportEntry( getClass().getName(), null, TEST_TWO, null,
-                        stackTraceWriterOne, 5 ), ReportEntryType.ERROR, 5, createStdOutput( firstRunOut ),
-                        createStdOutput( firstRunErr ) );
+                new WrappedReportEntry(
+                        SimpleReportEntry.builder()
+                                .source( getClass().getName(), null )
+                                .name( TEST_TWO, null )
+                                .stackTraceWriterAndMessage( stackTraceWriterOne )
+                                .elapsed( 5 )
+                                .build(),
+                        ReportEntryType.ERROR, 5, createStdOutput( firstRunOut ), createStdOutput( firstRunErr ) );
 
         WrappedReportEntry testTwoSecondError =
-                new WrappedReportEntry( new SimpleReportEntry( getClass().getName(), null, TEST_TWO, null,
-                        stackTraceWriterTwo, 13 ), ReportEntryType.ERROR, 13, createStdOutput( secondRunOut ),
-                        createStdOutput( secondRunErr ) );
+                new WrappedReportEntry(
+                        SimpleReportEntry.builder()
+                                .source(  getClass().getName(), null )
+                                .name( TEST_TWO, null )
+                                .stackTraceWriterAndMessage( stackTraceWriterTwo )
+                                .elapsed( 13 )
+                                .build(),
+                        ReportEntryType.ERROR, 13, createStdOutput( secondRunOut ), createStdOutput( secondRunErr ) );
 
         WrappedReportEntry testThreeFirstRun =
-                new WrappedReportEntry( new SimpleReportEntry( getClass().getName(), null, TEST_THREE, null,
-                        stackTraceWriterOne, 13 ), ReportEntryType.FAILURE, 13, createStdOutput( firstRunOut ),
-                        createStdOutput( firstRunErr ) );
+                new WrappedReportEntry(
+                        SimpleReportEntry.builder()
+                                .source(  getClass().getName(), null )
+                                .name( TEST_THREE, null )
+                                .stackTraceWriterAndMessage( stackTraceWriterOne )
+                                .elapsed( 13 )
+                                .build(),
+                        ReportEntryType.FAILURE, 13, createStdOutput( firstRunOut ), createStdOutput( firstRunErr ) );
 
         WrappedReportEntry testThreeSecondRun =
-                new WrappedReportEntry( new SimpleReportEntry( getClass().getName(), null, TEST_THREE, null,
-                        stackTraceWriterTwo, 2 ), ReportEntryType.SUCCESS, 2, createStdOutput( secondRunOut ),
-                        createStdOutput( secondRunErr ) );
+                new WrappedReportEntry(
+                        SimpleReportEntry.builder()
+                                .source( getClass().getName(), null )
+                                .name( TEST_THREE, null )
+                                .stackTraceWriterAndMessage( stackTraceWriterTwo )
+                                .elapsed( 2 )
+                                .build(),
+                    ReportEntryType.SUCCESS, 2, createStdOutput( secondRunOut ), createStdOutput( secondRunErr ) );
 
         stats.testSucceeded( testTwoFirstError );
         stats.testSucceeded( testThreeFirstRun );

@@ -152,12 +152,12 @@ public class RunListenerAdapterTest
         adapter.executionStarted( TestIdentifier.from( engine ) );
         adapter.executionStarted( TestIdentifier.from( parent ) );
         verify( listener )
-                .testSetStarting( new SimpleReportEntry( className, null, null, null ) );
+                .testSetStarting( SimpleReportEntry.builder().source( className, null ).build() );
         verifyNoMoreInteractions( listener );
 
         adapter.executionStarted( TestIdentifier.from( child ) );
-        verify( listener )
-                .testStarting( new SimpleReportEntry( className, null, MY_TEST_METHOD_NAME, null ) );
+        verify( listener ).testStarting(
+                SimpleReportEntry.builder().source( className, null ).name( MY_TEST_METHOD_NAME, null ).build() );
         verifyNoMoreInteractions( listener );
 
         adapter.executionFinished( TestIdentifier.from( child ), successful() );
@@ -234,8 +234,8 @@ public class RunListenerAdapterTest
 
         adapter.executionStarted( TestIdentifier.from( child1 ) );
         inOrder.verify( listener )
-                .testStarting( new SimpleReportEntry( MyTestClass.class.getName(), "parent",
-                        MY_NAMED_TEST_METHOD_NAME, "dn1" ) );
+                .testStarting( SimpleReportEntry.builder().source( MyTestClass.class.getName(), "parent" )
+                        .name( MY_NAMED_TEST_METHOD_NAME, "dn1" ).build() );
         inOrder.verifyNoMoreInteractions();
 
         adapter.executionFinished( TestIdentifier.from( child1 ), successful() );
@@ -257,8 +257,8 @@ public class RunListenerAdapterTest
 
         adapter.executionStarted( TestIdentifier.from( child2 ) );
         inOrder.verify( listener )
-                .testStarting( new SimpleReportEntry( MyTestClass.class.getName(), "parent",
-                        MY_TEST_METHOD_NAME + "(String)", null ) );
+                .testStarting( SimpleReportEntry.builder().source( MyTestClass.class.getName(), "parent" )
+                        .name( MY_TEST_METHOD_NAME + "(String)", null ).build() );
         inOrder.verifyNoMoreInteractions();
 
         Exception assumptionFailure = new Exception();
@@ -327,7 +327,7 @@ public class RunListenerAdapterTest
 
         adapter.executionStarted( TestIdentifier.from( engine ) );
         verify( listener )
-                .testStarting( new SimpleReportEntry( "engine", null, "engine", null ) );
+                .testStarting( SimpleReportEntry.builder().source( "engine", null ).name( "engine", null ).build() );
         verifyNoMoreInteractions( listener );
 
         adapter.executionFinished( TestIdentifier.from( engine ), successful() );
@@ -534,7 +534,7 @@ public class RunListenerAdapterTest
         String className = MyTestClass.class.getName();
 
         verify( listener )
-                .testSetStarting( new SimpleReportEntry( className, null, null, null ) );
+                .testSetStarting( SimpleReportEntry.builder().source( className, null ).build() );
 
         ArgumentCaptor<SimpleReportEntry> report = ArgumentCaptor.forClass( SimpleReportEntry.class );
         verify( listener )

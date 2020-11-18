@@ -43,7 +43,8 @@ public class CategorizedReportEntry
     public CategorizedReportEntry( String source, String name, String group, StackTraceWriter stackTraceWriter,
                                    Integer elapsed )
     {
-        super( source, null, name, null, stackTraceWriter, elapsed );
+        super( source, null, name, null,
+                stackTraceWriter, elapsed, safeGetMessage( stackTraceWriter ), Collections.<String, String>emptyMap() );
         this.group = group;
     }
 

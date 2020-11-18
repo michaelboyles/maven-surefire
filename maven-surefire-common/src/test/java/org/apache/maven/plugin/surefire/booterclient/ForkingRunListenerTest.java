@@ -402,7 +402,12 @@ public class ForkingRunListenerTest
 
     private SimpleReportEntry createDefaultReportEntry( Map<String, String> sysProps )
     {
-        return new SimpleReportEntry( "com.abc.TestClass", null, "testMethod", null, null, 22, sysProps );
+        return SimpleReportEntry.builder()
+            .source( "com.abc.TestClass", null )
+            .name( "testMethod", null )
+            .elapsed( 22 )
+            .systemProperties( sysProps )
+            .build();
     }
 
     private SimpleReportEntry createDefaultReportEntry()
@@ -412,7 +417,11 @@ public class ForkingRunListenerTest
 
     private SimpleReportEntry createAnotherDefaultReportEntry()
     {
-        return new SimpleReportEntry( "com.abc.AnotherTestClass", null, "testAnotherMethod", null, 42 );
+        return SimpleReportEntry.builder()
+            .source( "com.abc.AnotherTestClass", null )
+            .name( "testAnotherMethod", null )
+            .elapsed( 42 )
+            .build();
     }
 
     private SimpleReportEntry createReportEntryWithStackTrace()

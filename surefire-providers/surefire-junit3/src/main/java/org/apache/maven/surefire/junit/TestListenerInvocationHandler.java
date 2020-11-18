@@ -28,9 +28,7 @@ import org.apache.maven.surefire.api.report.LegacyPojoStackTraceWriter;
 import org.apache.maven.surefire.api.report.ReportEntry;
 import org.apache.maven.surefire.api.report.RunListener;
 import org.apache.maven.surefire.api.report.SimpleReportEntry;
-import org.apache.maven.surefire.api.report.StackTraceWriter;
 
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.withException;
 import static org.apache.maven.surefire.api.util.internal.TestClassMethodNameUtils.extractClassName;
 import static org.apache.maven.surefire.api.util.internal.TestClassMethodNameUtils.extractMethodName;
 
@@ -214,15 +212,19 @@ public class TestListenerInvocationHandler
             throws ReflectiveOperationException
     {
         String description = args[0].toString();
-        String className = extractClassName( description );
-        String methodName = extractMethodName( description );
-        StackTraceWriter stackTraceWriter = toStackTraceWriter( args );
-        return withException( className, null, methodName, null, stackTraceWriter );
+        return SimpleReportEntry.builder()
+            .source( extractClassName( description ), null )
+            .name( extractMethodName( description ), null )
+            .stackTraceWriterAndMessage( toStackTraceWriter( args ) )
+            .build();
     }
 
     private static SimpleReportEntry createStartEndReportEntry( Object[] args )
     {
         String description = args[0].toString();
-        return new SimpleReportEntry( extractClassName( description ), null, extractMethodName( description ), null );
+        return SimpleReportEntry.builder()
+            .source( extractClassName( description ), null )
+            .name( extractMethodName( description ), null )
+            .build();
     }
 }

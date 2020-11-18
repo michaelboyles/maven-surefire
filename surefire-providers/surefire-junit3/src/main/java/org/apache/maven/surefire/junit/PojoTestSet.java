@@ -30,8 +30,6 @@ import org.apache.maven.surefire.api.report.SimpleReportEntry;
 import org.apache.maven.surefire.api.report.StackTraceWriter;
 import org.apache.maven.surefire.api.testset.TestSetFailedException;
 
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.withException;
-
 /**
  * Executes a JUnit3 test class
  *
@@ -121,7 +119,7 @@ public class PojoTestSet
         final String userFriendlyMethodName = methodName + "()";
         final String testName = getTestName( userFriendlyMethodName );
 
-        reportManager.testStarting( new SimpleReportEntry( testClassName, null, testName, null ) );
+        reportManager.testStarting( SimpleReportEntry.builder().source( testClassName, null ).build() );
 
         try
         {
@@ -130,7 +128,13 @@ public class PojoTestSet
         catch ( Throwable e )
         {
             StackTraceWriter stackTraceWriter = new LegacyPojoStackTraceWriter( testClassName, methodName, e );
-            reportManager.testFailed( withException( testClassName, null, testName, null, stackTraceWriter ) );
+            reportManager.testFailed(
+                SimpleReportEntry.builder()
+                    .source( testClassName, null )
+                    .name( testName, null )
+                    .stackTraceWriterAndMessage( stackTraceWriter )
+                    .build()
+            );
 
             // A return value of true indicates to this class's executeTestMethods
             // method that it should abort and not attempt to execute
@@ -144,20 +148,34 @@ public class PojoTestSet
         try
         {
             method.invoke( testObject, EMPTY_OBJECT_ARRAY );
-            reportManager.testSucceeded( new SimpleReportEntry( testClassName, null, testName, null ) );
+            reportManager.testSucceeded(
+                SimpleReportEntry.builder().source( testClassName, null ).name( testName, null ).build()
+            );
         }
         catch ( InvocationTargetException e )
         {
             Throwable t = e.getTargetException();
             StackTraceWriter stackTraceWriter = new LegacyPojoStackTraceWriter( testClassName, methodName, t );
-            reportManager.testFailed( withException( testClassName, null, testName, null, stackTraceWriter ) );
+            reportManager.testFailed(
+                SimpleReportEntry.builder()
+                    .source( testClassName, null )
+                    .name( testName, null )
+                    .stackTraceWriterAndMessage( stackTraceWriter )
+                    .build()
+            );
             // Don't return  here, because tearDownFixture should be called even
             // if the test method throws an exception.
         }
         catch ( Throwable t )
         {
             StackTraceWriter stackTraceWriter = new LegacyPojoStackTraceWriter( testClassName, methodName, t );
-            reportManager.testFailed( withException( testClassName, null, testName, null, stackTraceWriter ) );
+            reportManager.testFailed(
+                SimpleReportEntry.builder()
+                    .source( testClassName, null )
+                    .name( testName, null )
+                    .stackTraceWriterAndMessage( stackTraceWriter )
+                    .build()
+            );
             // Don't return  here, because tearDownFixture should be called even
             // if the test method throws an exception.
         }
@@ -170,7 +188,13 @@ public class PojoTestSet
         {
             StackTraceWriter stackTraceWriter = new LegacyPojoStackTraceWriter( testClassName, methodName, t );
             // Treat any exception from tearDownFixture as a failure of the test.
-            reportManager.testFailed( withException( testClassName, null, testName, null, stackTraceWriter ) );
+            reportManager.testFailed(
+                SimpleReportEntry.builder()
+                    .source( testClassName, null )
+                    .name( testName, null )
+                    .stackTraceWriterAndMessage( stackTraceWriter )
+                    .build()
+            );
 
             // A return value of true indicates to this class's executeTestMethods
             // method that it should abort and not attempt to execute

@@ -49,34 +49,7 @@ public class SimpleReportEntry
 
     private final String message;
 
-    public SimpleReportEntry( String source, String sourceText, String name, String nameText )
-    {
-        this( source, sourceText, name, nameText, null, null );
-    }
-
-    public SimpleReportEntry( String source, String sourceText, String name, String nameText,
-                              Map<String, String> systemProperties )
-    {
-        this( source, sourceText, name, nameText, null, null, systemProperties );
-    }
-
-    private SimpleReportEntry( String source, String sourceText, String name, String nameText,
-                               StackTraceWriter stackTraceWriter )
-    {
-        this( source, sourceText, name, nameText, stackTraceWriter, null );
-    }
-
-    public SimpleReportEntry( String source, String sourceText, String name, String nameText, Integer elapsed )
-    {
-        this( source, sourceText, name, nameText, null, elapsed );
-    }
-
-    public SimpleReportEntry( String source, String sourceText, String name, String nameText, String message )
-    {
-        this( source, sourceText, name, nameText, null, null, message, Collections.<String, String>emptyMap() );
-    }
-
-    public SimpleReportEntry( String source, String sourceText, String name, String nameText,
+    protected SimpleReportEntry( String source, String sourceText, String name, String nameText,
                                  StackTraceWriter stackTraceWriter, Integer elapsed, String message,
                                  Map<String, String> systemProperties )
     {
@@ -90,38 +63,79 @@ public class SimpleReportEntry
         this.systemProperties = new ImmutableMap<>( systemProperties );
     }
 
-    public SimpleReportEntry( String source, String sourceText, String name, String nameText,
-                              StackTraceWriter stackTraceWriter, Integer elapsed )
+    /**
+     * A builder for {@link SimpleReportEntry}s.
+     */
+    public static class Builder
     {
-        this( source, sourceText, name, nameText, stackTraceWriter, elapsed, Collections.<String, String>emptyMap() );
+        private Map<String, String> systemProperties = Collections.emptyMap();
+        private String source;
+        private String sourceText;
+        private String name;
+        private String nameText;
+        private StackTraceWriter stackTraceWriter;
+        private Integer elapsed;
+        private String message;
+
+        public Builder systemProperties( Map<String, String> systemProperties )
+        {
+            this.systemProperties = systemProperties;
+            return this;
+        }
+
+        public Builder source( String source, String sourceText )
+        {
+            this.source = source;
+            this.sourceText = sourceText;
+            return this;
+        }
+
+        public Builder name( String name, String nameText )
+        {
+            this.name = name;
+            this.nameText = nameText;
+            return this;
+        }
+
+        public Builder stackTraceWriter( StackTraceWriter stackTraceWriter )
+        {
+            this.stackTraceWriter = stackTraceWriter;
+            return this;
+        }
+
+        public Builder stackTraceWriterAndMessage( StackTraceWriter stackTraceWriter )
+        {
+            this.stackTraceWriter = stackTraceWriter;
+            this.message = safeGetMessage( stackTraceWriter );
+            return this;
+        }
+
+        public Builder elapsed( Integer elapsed )
+        {
+            this.elapsed = elapsed;
+            return this;
+        }
+
+        public Builder message( String message )
+        {
+            this.message = message;
+            return this;
+        }
+
+        public SimpleReportEntry build()
+        {
+            return new SimpleReportEntry(
+                source, sourceText, name, nameText, stackTraceWriter, elapsed, message, systemProperties
+            );
+        }
     }
 
-    public SimpleReportEntry( String source, String sourceText, String name, String nameText,
-                              StackTraceWriter stackTraceWriter, Integer elapsed, Map<String, String> systemProperties )
+    public static Builder builder()
     {
-        this( source, sourceText, name, nameText,
-                stackTraceWriter, elapsed, safeGetMessage( stackTraceWriter ), systemProperties );
+        return new Builder();
     }
 
-    public static SimpleReportEntry assumption( String source, String sourceText, String name, String nameText,
-                                                String message )
-    {
-        return new SimpleReportEntry( source, sourceText, name, nameText, message );
-    }
-
-    public static SimpleReportEntry ignored( String source, String sourceText, String name, String nameText,
-                                             String message )
-    {
-        return new SimpleReportEntry( source, sourceText, name, nameText, message );
-    }
-
-    public static SimpleReportEntry withException( String source, String sourceText, String name, String nameText,
-                                                   StackTraceWriter stackTraceWriter )
-    {
-        return new SimpleReportEntry( source, sourceText, name, nameText, stackTraceWriter );
-    }
-
-    private static String safeGetMessage( StackTraceWriter stackTraceWriter )
+    protected static String safeGetMessage( StackTraceWriter stackTraceWriter )
     {
         try
         {

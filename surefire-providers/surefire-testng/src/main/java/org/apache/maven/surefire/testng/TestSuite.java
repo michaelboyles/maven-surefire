@@ -43,7 +43,7 @@ abstract class TestSuite
 
     final void startTestSuite( RunListener reporterManager )
     {
-        TestSetReportEntry report = new SimpleReportEntry( getSuiteName(), null, null, null );
+        TestSetReportEntry report = SimpleReportEntry.builder().source( getSuiteName(), null ).build();
 
         try
         {
@@ -57,7 +57,10 @@ abstract class TestSuite
 
     final void finishTestSuite( RunListener reporterManager )
     {
-        SimpleReportEntry report = new SimpleReportEntry( getSuiteName(), null, null, null, systemProps() );
+        SimpleReportEntry report = SimpleReportEntry.builder()
+            .source( getSuiteName(), null )
+            .systemProperties( systemProps() )
+            .build();
         reporterManager.testSetCompleted( report );
     }
 }

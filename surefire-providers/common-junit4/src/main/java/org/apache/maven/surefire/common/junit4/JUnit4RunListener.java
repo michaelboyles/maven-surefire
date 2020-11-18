@@ -32,9 +32,6 @@ import org.junit.runner.notification.Failure;
 import static org.apache.maven.surefire.common.junit4.JUnit4ProviderUtil.isFailureInsideJUnitItself;
 import static org.apache.maven.surefire.common.junit4.JUnit4ProviderUtil.toClassMethod;
 import static org.apache.maven.surefire.common.junit4.JUnit4Reflector.getAnnotatedIgnoreValue;
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.assumption;
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.ignored;
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.withException;
 
 /**
  * RunListener for JUnit4, delegates to our own RunListener
@@ -76,7 +73,13 @@ public class JUnit4RunListener
     {
         String reason = getAnnotatedIgnoreValue( description );
         ClassMethod classMethod = toClassMethod( description );
-        reporter.testSkipped( ignored( classMethod.getClazz(), null, classMethod.getMethod(), null, reason ) );
+        reporter.testSkipped(
+            SimpleReportEntry.builder()
+                .source( classMethod.getClazz(), null )
+                .name( classMethod.getMethod(), null )
+                .message( reason )
+                .build()
+        );
     }
 
     /**
@@ -112,8 +115,11 @@ public class JUnit4RunListener
         {
             StackTraceWriter stackTrace = createStackTraceWriter( failure );
             ClassMethod classMethod = toClassMethod( failure.getDescription() );
-            ReportEntry report =
-                    withException( classMethod.getClazz(), null, classMethod.getMethod(), null, stackTrace );
+            ReportEntry report = SimpleReportEntry.builder()
+                .source( classMethod.getClazz(), null )
+                .name( classMethod.getMethod(), null )
+                .stackTraceWriterAndMessage( stackTrace )
+                .build();
 
             if ( failure.getException() instanceof AssertionError )
             {
@@ -136,8 +142,11 @@ public class JUnit4RunListener
         {
             Description desc = failure.getDescription();
             ClassMethod classMethod = toClassMethod( desc );
-            ReportEntry report = assumption( classMethod.getClazz(), null, classMethod.getMethod(), null,
-                    failure.getMessage() );
+            ReportEntry report = SimpleReportEntry.builder()
+                .source( classMethod.getClazz(), null )
+                .name( classMethod.getMethod(), null )
+                .message( failure.getMessage() )
+                .build();
             reporter.testAssumptionFailure( report );
         }
         finally
@@ -178,7 +187,10 @@ public class JUnit4RunListener
     protected SimpleReportEntry createReportEntry( Description description )
     {
         ClassMethod classMethod = toClassMethod( description );
-        return new SimpleReportEntry( classMethod.getClazz(), null, classMethod.getMethod(), null );
+        return SimpleReportEntry.builder()
+            .source( classMethod.getClazz(), null )
+            .name( classMethod.getMethod(), null )
+            .build();
     }
 
     public static void rethrowAnyTestMechanismFailures( Result run )

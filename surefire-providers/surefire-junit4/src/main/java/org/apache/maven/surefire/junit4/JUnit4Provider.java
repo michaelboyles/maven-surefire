@@ -61,7 +61,6 @@ import static org.apache.maven.surefire.common.junit4.JUnit4RunListener.rethrowA
 import static org.apache.maven.surefire.common.junit4.JUnit4RunListenerFactory.createCustomListeners;
 import static org.apache.maven.surefire.common.junit4.Notifier.pureNotifier;
 import static org.apache.maven.surefire.api.report.ConsoleOutputCapture.startCapture;
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.withException;
 import static org.apache.maven.surefire.api.testset.TestListResolver.optionallyWildcardFilter;
 import static org.apache.maven.surefire.api.util.TestsToRun.fromClass;
 import static org.apache.maven.surefire.api.util.internal.ObjectUtils.systemProps;
@@ -230,7 +229,10 @@ public class JUnit4Provider
 
     private void executeTestSet( Class<?> clazz, RunListener reporter, Notifier notifier )
     {
-        final SimpleReportEntry report = new SimpleReportEntry( clazz.getName(), null, null, null, systemProps() );
+        final SimpleReportEntry report = SimpleReportEntry.builder()
+            .source( clazz.getName(), null )
+            .systemProperties( systemProps() )
+            .build();
         reporter.testSetStarting( report );
         try
         {
@@ -249,7 +251,13 @@ public class JUnit4Provider
                 String reportName = report.getName();
                 String reportSourceName = report.getSourceName();
                 PojoStackTraceWriter stackWriter = new PojoStackTraceWriter( reportSourceName, reportName, e );
-                reporter.testError( withException( reportSourceName, null, reportName, null, stackWriter ) );
+                reporter.testError(
+                    SimpleReportEntry.builder()
+                        .source( reportSourceName, null )
+                        .name( reportName, null )
+                        .stackTraceWriterAndMessage( stackWriter )
+                        .build()
+                );
             }
         }
         finally

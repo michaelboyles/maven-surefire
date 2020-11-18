@@ -136,13 +136,16 @@ public class JUnit3Provider
 
         try
         {
-            TestSetReportEntry started = new SimpleReportEntry( clazz, null, null, null );
+            TestSetReportEntry started = SimpleReportEntry.builder().source( clazz, null ).build();
             reporter.testSetStarting( started );
             testSet.execute( reporter, classLoader );
         }
         finally
         {
-            TestSetReportEntry completed = new SimpleReportEntry( clazz, null, null, null, systemProperties );
+            TestSetReportEntry completed = SimpleReportEntry.builder()
+                .source( clazz, null )
+                .systemProperties( systemProperties )
+                .build();
             reporter.testSetCompleted( completed );
         }
     }

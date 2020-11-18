@@ -20,6 +20,7 @@ package org.apache.maven.surefire.testng;
  */
 
 import org.apache.maven.surefire.api.report.CategorizedReportEntry;
+import org.apache.maven.surefire.api.report.StackTraceWriter;
 import org.apache.maven.surefire.report.PojoStackTraceWriter;
 import org.apache.maven.surefire.api.report.ReportEntry;
 import org.apache.maven.surefire.api.report.RunListener;
@@ -33,9 +34,6 @@ import org.testng.ITestListener;
 import org.testng.ITestResult;
 
 import java.util.Arrays;
-
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.ignored;
-import static org.apache.maven.surefire.api.report.SimpleReportEntry.withException;
 
 /**
  * Listens for and provides and adaptor layer so that
@@ -75,7 +73,10 @@ public class TestNGReporter
     @Override
     public void onTestSuccess( ITestResult result )
     {
-        ReportEntry report = new SimpleReportEntry( result.getTestClass().getName(), null, testName( result ), null );
+        ReportEntry report = SimpleReportEntry.builder()
+            .source( result.getTestClass().getName(), null )
+            .name( testName( result ), null )
+            .build();
         reporter.testSucceeded( report );
     }
 
@@ -83,9 +84,14 @@ public class TestNGReporter
     public void onTestFailure( ITestResult result )
     {
         IClass clazz = result.getTestClass();
-        ReportEntry report = withException( clazz.getName(), null, testName( result ), null,
-            new PojoStackTraceWriter( clazz.getRealClass().getName(), result.getMethod().getMethodName(),
-                result.getThrowable() ) );
+        StackTraceWriter stackTraceWriter = new PojoStackTraceWriter(
+            clazz.getRealClass().getName(), result.getMethod().getMethodName(), result.getThrowable()
+        );
+        ReportEntry report = SimpleReportEntry.builder()
+            .source( clazz.getName(), null )
+            .name( testName( result ), null )
+            .stackTraceWriterAndMessage( stackTraceWriter )
+            .build();
 
         reporter.testFailed( report );
     }
@@ -96,7 +102,11 @@ public class TestNGReporter
         //noinspection ThrowableResultOfMethodCallIgnored
         Throwable t = result.getThrowable();
         String reason = t == null ? null : t.getMessage();
-        ReportEntry report = ignored( result.getTestClass().getName(), null, testName( result ), null, reason );
+        ReportEntry report = SimpleReportEntry.builder()
+            .source( result.getTestClass().getName(), null )
+            .name( testName( result ), null )
+            .message( reason )
+            .build();
         reporter.testSkipped( report );
     }
 
@@ -104,9 +114,14 @@ public class TestNGReporter
     public void onTestFailedButWithinSuccessPercentage( ITestResult result )
     {
         IClass clazz = result.getTestClass();
-        ReportEntry report = withException( clazz.getName(), null, testName( result ), null,
-            new PojoStackTraceWriter( clazz.getRealClass().getName(), result.getMethod().getMethodName(),
-                result.getThrowable() ) );
+        StackTraceWriter stackTraceWriter = new PojoStackTraceWriter(
+            clazz.getRealClass().getName(), result.getMethod().getMethodName(), result.getThrowable()
+        );
+        ReportEntry report = SimpleReportEntry.builder()
+            .source( clazz.getName(), null )
+            .name( testName( result ), null )
+            .stackTraceWriterAndMessage( stackTraceWriter )
+            .build();
 
         reporter.testSucceeded( report );
     }

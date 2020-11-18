@@ -206,8 +206,14 @@ final class RunListenerAdapter
         }
         StackTraceWriter stw =
                 testExecutionResult == null ? null : toStackTraceWriter( className, methodName, testExecutionResult );
-        return new SimpleReportEntry( className, classText, methodName, methodText,
-                stw, elapsedTime, reason, systemProperties );
+        return SimpleReportEntry.builder()
+            .source( className, classText )
+            .name( methodName, methodText )
+            .stackTraceWriter( stw )
+            .elapsed( elapsedTime )
+            .message( reason )
+            .systemProperties( systemProperties )
+            .build();
     }
 
     private SimpleReportEntry createReportEntry( TestIdentifier testIdentifier )
