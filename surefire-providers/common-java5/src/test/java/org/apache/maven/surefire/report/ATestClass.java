@@ -63,4 +63,9 @@ public class ATestClass
         throw new RuntimeException( "This message will be truncated, somewhere over the rainbow. "
                                     + "Gangnam style, Gangnam style, Gangnam style, , Gangnam style, Gangnam style" );
     }
+
+    public void aMockedException()
+    {
+        throw new SomeMockedException();
+    }
 }

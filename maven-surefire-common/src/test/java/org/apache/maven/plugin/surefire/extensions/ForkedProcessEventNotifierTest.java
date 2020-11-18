@@ -30,17 +30,17 @@ import org.apache.maven.plugin.surefire.booterclient.output.ForkedProcessStandar
 import org.apache.maven.plugin.surefire.booterclient.output.ForkedProcessStringEventListener;
 import org.apache.maven.plugin.surefire.log.api.ConsoleLogger;
 import org.apache.maven.plugin.surefire.log.api.ConsoleLoggerUtils;
-import org.apache.maven.surefire.booter.spi.LegacyMasterProcessChannelEncoder;
 import org.apache.maven.surefire.api.event.Event;
-import org.apache.maven.surefire.extensions.EventHandler;
-import org.apache.maven.surefire.extensions.ForkNodeArguments;
-import org.apache.maven.surefire.extensions.util.CountdownCloseable;
 import org.apache.maven.surefire.api.report.ReportEntry;
 import org.apache.maven.surefire.api.report.RunMode;
 import org.apache.maven.surefire.api.report.SafeThrowable;
 import org.apache.maven.surefire.api.report.StackTraceWriter;
 import org.apache.maven.surefire.api.util.internal.ObjectUtils;
 import org.apache.maven.surefire.api.util.internal.WritableBufferedByteChannel;
+import org.apache.maven.surefire.booter.spi.LegacyMasterProcessChannelEncoder;
+import org.apache.maven.surefire.extensions.EventHandler;
+import org.apache.maven.surefire.extensions.ForkNodeArguments;
+import org.apache.maven.surefire.extensions.util.CountdownCloseable;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
@@ -50,7 +50,6 @@ import org.junit.experimental.theories.Theories;
 import org.junit.experimental.theories.Theory;
 import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
 import org.powermock.core.classloader.annotations.PowerMockIgnore;
 import org.powermock.modules.junit4.PowerMockRunner;
 
@@ -62,11 +61,11 @@ import java.io.File;
 import java.io.LineNumberReader;
 import java.io.PrintStream;
 import java.io.StringReader;
-import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -74,20 +73,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Arrays.copyOfRange;
 import static org.apache.maven.surefire.api.report.RunMode.NORMAL_RUN;
-import static org.apache.maven.surefire.shared.codec.binary.Base64.encodeBase64String;
 import static org.apache.maven.surefire.api.util.internal.Channels.newBufferedChannel;
 import static org.apache.maven.surefire.api.util.internal.Channels.newChannel;
 import static org.fest.assertions.Assertions.assertThat;
-import static org.fest.assertions.Index.atIndex;
 import static org.junit.Assert.assertTrue;
 import static org.junit.rules.ExpectedException.none;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.powermock.api.mockito.PowerMockito.mock;
+import static org.powermock.api.mockito.PowerMockito.when;
 
 /**
  * Test for {@link ForkedProcessEventNotifier}.
@@ -109,15 +102,6 @@ public class ForkedProcessEventNotifierTest
         public final ExpectedException rule = none();
 
         @Test
-        public void shouldBeFailSafe()
-        {
-            assertThat( EventConsumerThread.decode( null, UTF_8 ) ).isNull();
-            assertThat( EventConsumerThread.decode( "-", UTF_8 ) ).isNull();
-            assertThat( EventConsumerThread.decodeToInteger( null ) ).isNull();
-            assertThat( EventConsumerThread.decodeToInteger( "-" ) ).isNull();
-        }
-
-        @Test
         public void shouldHaveSystemProperty() throws Exception
         {
             final Stream out = Stream.newStream();
@@ -135,9 +119,8 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
@@ -146,7 +129,10 @@ public class ForkedProcessEventNotifierTest
                     notifier.notifyEvent( eventHandler.pullEvent() );
                 }
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.counter.get() )
                 .isEqualTo( props.size() );
         }
@@ -154,11 +140,7 @@ public class ForkedProcessEventNotifierTest
         @Test
         public void shouldRecognizeEmptyStream4ReportEntry()
         {
-            ReportEntry reportEntry = EventConsumerThread.decodeReportEntry( null, null, null, "", "", null, null, "",
-                    "", "", null );
-            assertThat( reportEntry ).isNull();
-
-            reportEntry = EventConsumerThread.decodeReportEntry( UTF_8, "", "", "", "", "", "", "-", "", "", "" );
+            ReportEntry reportEntry = EventConsumerThread.newReportEntry( "", "", "", "", "", "", null, "", "", "" );
             assertThat( reportEntry ).isNotNull();
             assertThat( reportEntry.getStackTraceWriter() ).isNotNull();
             assertThat( reportEntry.getStackTraceWriter().smartTrimmedStackTrace() ).isEmpty();
@@ -172,9 +154,6 @@ public class ForkedProcessEventNotifierTest
             assertThat( reportEntry.getNameWithGroup() ).isEmpty();
             assertThat( reportEntry.getMessage() ).isEmpty();
             assertThat( reportEntry.getElapsed() ).isNull();
-
-            rule.expect( NumberFormatException.class );
-            EventConsumerThread.decodeReportEntry( UTF_8, "", "", "", "", "", "", "", "", "", "" );
         }
 
         @Test
@@ -182,16 +161,9 @@ public class ForkedProcessEventNotifierTest
         public void testCreatingReportEntry()
         {
             final String exceptionMessage = "msg";
-            final String encodedExceptionMsg = encodeBase64String( toArray( UTF_8.encode( exceptionMessage ) ) );
-
             final String smartStackTrace = "MyTest:86 >> Error";
-            final String encodedSmartStackTrace = encodeBase64String( toArray( UTF_8.encode( smartStackTrace ) ) );
-
             final String stackTrace = "Exception: msg\ntrace line 1\ntrace line 2";
-            final String encodedStackTrace = encodeBase64String( toArray( UTF_8.encode( stackTrace ) ) );
-
             final String trimmedStackTrace = "trace line 1\ntrace line 2";
-            final String encodedTrimmedStackTrace = encodeBase64String( toArray( UTF_8.encode( trimmedStackTrace ) ) );
 
             SafeThrowable safeThrowable = new SafeThrowable( exceptionMessage );
             StackTraceWriter stackTraceWriter = mock( StackTraceWriter.class );
@@ -211,15 +183,9 @@ public class ForkedProcessEventNotifierTest
             when( reportEntry.getSourceText() ).thenReturn( "test class display name" );
             when( reportEntry.getStackTraceWriter() ).thenReturn( stackTraceWriter );
 
-            String encodedSourceName = encodeBase64String( toArray( UTF_8.encode( reportEntry.getSourceName() ) ) );
-            String encodedSourceText = encodeBase64String( toArray( UTF_8.encode( reportEntry.getSourceText() ) ) );
-            String encodedName = encodeBase64String( toArray( UTF_8.encode( reportEntry.getName() ) ) );
-            String encodedText = encodeBase64String( toArray( UTF_8.encode( reportEntry.getNameText() ) ) );
-            String encodedGroup = encodeBase64String( toArray( UTF_8.encode( reportEntry.getGroup() ) ) );
-            String encodedMessage = encodeBase64String( toArray( UTF_8.encode( reportEntry.getMessage() ) ) );
-
-            ReportEntry decodedReportEntry = EventConsumerThread.decodeReportEntry( UTF_8, encodedSourceName,
-                encodedSourceText, encodedName, encodedText, encodedGroup, encodedMessage, "-", null, null, null );
+            ReportEntry decodedReportEntry = EventConsumerThread.newReportEntry( reportEntry.getSourceName(),
+                reportEntry.getSourceText(), reportEntry.getName(), reportEntry.getNameText(), reportEntry.getGroup(),
+                reportEntry.getMessage(), null, null, null, null );
 
             assertThat( decodedReportEntry ).isNotNull();
             assertThat( decodedReportEntry.getSourceName() ).isEqualTo( reportEntry.getSourceName() );
@@ -230,9 +196,9 @@ public class ForkedProcessEventNotifierTest
             assertThat( decodedReportEntry.getMessage() ).isEqualTo( reportEntry.getMessage() );
             assertThat( decodedReportEntry.getStackTraceWriter() ).isNull();
 
-            decodedReportEntry = EventConsumerThread.decodeReportEntry( UTF_8, encodedSourceName, encodedSourceText,
-                encodedName, encodedText, encodedGroup, encodedMessage, "-", encodedExceptionMsg,
-                encodedSmartStackTrace, null );
+            decodedReportEntry = EventConsumerThread.newReportEntry( reportEntry.getSourceName(),
+                reportEntry.getSourceText(), reportEntry.getName(), reportEntry.getNameText(), reportEntry.getGroup(),
+                reportEntry.getMessage(), null, exceptionMessage, smartStackTrace, null );
 
             assertThat( decodedReportEntry ).isNotNull();
             assertThat( decodedReportEntry.getSourceName() ).isEqualTo( reportEntry.getSourceName() );
@@ -250,9 +216,9 @@ public class ForkedProcessEventNotifierTest
             assertThat( decodedReportEntry.getStackTraceWriter().writeTraceToString() )
                 .isNull();
 
-            decodedReportEntry = EventConsumerThread.decodeReportEntry( UTF_8, encodedSourceName, encodedSourceText,
-                encodedName, encodedText, encodedGroup, encodedMessage, "1003", encodedExceptionMsg,
-                encodedSmartStackTrace, null );
+            decodedReportEntry = EventConsumerThread.newReportEntry( reportEntry.getSourceName(),
+                reportEntry.getSourceText(), reportEntry.getName(), reportEntry.getNameText(), reportEntry.getGroup(),
+                reportEntry.getMessage(), 1003, exceptionMessage, smartStackTrace, null );
 
             assertThat( decodedReportEntry ).isNotNull();
             assertThat( decodedReportEntry.getSourceName() ).isEqualTo( reportEntry.getSourceName() );
@@ -270,9 +236,9 @@ public class ForkedProcessEventNotifierTest
             assertThat( decodedReportEntry.getStackTraceWriter().writeTraceToString() )
                 .isNull();
 
-            decodedReportEntry = EventConsumerThread.decodeReportEntry( UTF_8, encodedSourceName, encodedSourceText,
-                encodedName, encodedText, encodedGroup, encodedMessage, "1003", encodedExceptionMsg,
-                encodedSmartStackTrace, encodedStackTrace );
+            decodedReportEntry = EventConsumerThread.newReportEntry( reportEntry.getSourceName(),
+                reportEntry.getSourceText(), reportEntry.getName(), reportEntry.getNameText(), reportEntry.getGroup(),
+                reportEntry.getMessage(), 1003, exceptionMessage, smartStackTrace, stackTrace );
 
             assertThat( decodedReportEntry ).isNotNull();
             assertThat( decodedReportEntry.getSourceName() ).isEqualTo( reportEntry.getSourceName() );
@@ -291,9 +257,9 @@ public class ForkedProcessEventNotifierTest
             assertThat( decodedReportEntry.getStackTraceWriter().writeTraceToString() ).isEqualTo( stackTrace );
             assertThat( decodedReportEntry.getStackTraceWriter().writeTrimmedTraceToString() ).isEqualTo( stackTrace );
 
-            decodedReportEntry = EventConsumerThread.decodeReportEntry( UTF_8, encodedSourceName, encodedSourceText,
-                encodedName, encodedText, encodedGroup, encodedMessage, "1003", encodedExceptionMsg,
-                encodedSmartStackTrace, encodedTrimmedStackTrace );
+            decodedReportEntry = EventConsumerThread.newReportEntry( reportEntry.getSourceName(),
+                reportEntry.getSourceText(), reportEntry.getName(), reportEntry.getNameText(), reportEntry.getGroup(),
+                reportEntry.getMessage(), 1003, exceptionMessage, smartStackTrace, trimmedStackTrace );
 
             assertThat( decodedReportEntry ).isNotNull();
             assertThat( decodedReportEntry.getSourceName() ).isEqualTo( reportEntry.getSourceName() );
@@ -324,7 +290,7 @@ public class ForkedProcessEventNotifierTest
             String read = new String( out.toByteArray(), UTF_8 );
 
             assertThat( read )
-                    .isEqualTo( ":maven-surefire-event:bye:\n" );
+                    .isEqualTo( ":maven-surefire-event:\u0003:bye:" );
 
             LineNumberReader lines = out.newReader( UTF_8 );
 
@@ -340,15 +306,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -363,7 +331,7 @@ public class ForkedProcessEventNotifierTest
             String read = new String( out.toByteArray(), UTF_8 );
 
             assertThat( read )
-                    .isEqualTo( ":maven-surefire-event:stop-on-next-test:\n" );
+                    .isEqualTo( ":maven-surefire-event:\u0011:stop-on-next-test:" );
 
             LineNumberReader lines = out.newReader( UTF_8 );
 
@@ -379,15 +347,19 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.dumpStreamText )
+                .isEmpty();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -430,15 +402,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -453,7 +427,7 @@ public class ForkedProcessEventNotifierTest
             String read = new String( out.toByteArray(), UTF_8 );
 
             assertThat( read )
-                    .isEqualTo( ":maven-surefire-event:next-test:\n" );
+                    .isEqualTo( ":maven-surefire-event:\u0009:next-test:" );
 
             ReadableByteChannel channel = newChannel( new ByteArrayInputStream( out.toByteArray() ) );
 
@@ -463,15 +437,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -492,15 +468,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -521,15 +499,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -552,15 +532,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -583,15 +565,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -613,14 +597,19 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
+
+            assertThat( logger.isCalled() )
+                .isFalse();
+
+            assertThat( arguments.isCalled() )
+                .isFalse();
 
             assertThat( listener.called.get() )
                 .isTrue();
@@ -646,15 +635,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -677,15 +668,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -708,15 +701,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -739,15 +734,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -770,15 +767,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -801,15 +800,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -832,15 +833,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -862,15 +865,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -887,46 +892,41 @@ public class ForkedProcessEventNotifierTest
         @Test
         public void shouldHandleErrorAfterUnknownOperation() throws Exception
         {
-            String cmd = ":maven-surefire-event:abnormal-run:-:\n";
+            String cmd = ":maven-surefire-event:\u000c:abnormal-run:-:\n";
 
             ReadableByteChannel channel = newChannel( new ByteArrayInputStream( cmd.getBytes() ) );
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 1 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            when( logger.isDebugEnabled() ).thenReturn( true );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.dumpStreamText( anyString() ) ).thenReturn( new File( "" ) );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( true, true, true, true );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 countdown.awaitClosed();
             }
 
-            ArgumentCaptor<String> dumpLine = ArgumentCaptor.forClass( String.class );
-            verify( logger, times( 2 ) ).debug( dumpLine.capture() );
-            assertThat( dumpLine.getAllValues() )
-                .hasSize( 2 )
-                .contains( ":maven-surefire-event:abnormal-run:", atIndex( 0 ) )
-                .contains( "-:", atIndex( 1 ) );
+            assertThat( arguments.isCalled() )
+                .isTrue();
 
-            ArgumentCaptor<String> dumpText = ArgumentCaptor.forClass( String.class );
-            verify( arguments, times( 2 ) ).dumpStreamText( dumpText.capture() );
+            assertThat( logger.isCalled() )
+                .isTrue();
+
+            assertThat( logger.debug )
+                .hasSize( 1 );
+
+            assertThat( logger.debug.peek() )
+                .contains( ":maven-surefire-event:\u000c:abnormal-run:-:" );
+
             String dump = "Corrupted STDOUT by directly writing to native stream in forked JVM 0.";
-            assertThat( dumpText.getAllValues() )
-                .hasSize( 2 )
-                .contains( format( dump + " Stream '%s'.", ":maven-surefire-event:abnormal-run:" ), atIndex( 0 ) )
-                .contains( format( dump + " Stream '%s'.", "-:" ), atIndex( 1 ) );
+            assertThat( arguments.dumpStreamText )
+                .hasSize( 1 )
+                .contains( format( dump + " Stream '%s'.", ":maven-surefire-event:\u000c:abnormal-run:-:" ) );
 
-            ArgumentCaptor<String> warning = ArgumentCaptor.forClass( String.class );
-            verify( arguments, times( 2 ) ).logWarningAtEnd( warning.capture() );
             dump += " See FAQ web page and the dump file ";
-            assertThat( warning.getAllValues() )
-                .hasSize( 2 );
-            assertThat( warning.getAllValues().get( 0 ) )
-                .startsWith( dump );
-            assertThat( warning.getAllValues().get( 1 ) )
+            assertThat( arguments.logWarningAtEnd )
+                .hasSize( 1 );
+            assertThat( arguments.logWarningAtEnd.peek() )
                 .startsWith( dump );
         }
 
@@ -952,15 +952,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
-
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
             assertThat( listener.called.get() )
                 .isTrue();
         }
@@ -1063,14 +1065,17 @@ public class ForkedProcessEventNotifierTest
 
             EH eventHandler = new EH();
             CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 0 );
-            ConsoleLogger logger = mock( ConsoleLogger.class );
-            ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-            when( arguments.getConsoleLogger() ).thenReturn( logger );
+            ConsoleLoggerMock logger = new ConsoleLoggerMock( false, false, false, false );
+            ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
             try ( EventConsumerThread t = new EventConsumerThread( "t", channel, eventHandler, countdown, arguments ) )
             {
                 t.start();
                 notifier.notifyEvent( eventHandler.pullEvent() );
             }
+            assertThat( logger.isCalled() )
+                .isFalse();
+            assertThat( arguments.isCalled() )
+                .isFalse();
         }
     }
 
@@ -1261,11 +1266,6 @@ public class ForkedProcessEventNotifierTest
         }
     }
 
-    private static byte[] toArray( ByteBuffer buffer )
-    {
-        return copyOfRange( buffer.array(), buffer.arrayOffset(), buffer.arrayOffset() + buffer.remaining() );
-    }
-
     private static class EH implements EventHandler<Event>
     {
         private final BlockingQueue<Event> cache = new LinkedTransferQueue<>();
@@ -1279,6 +1279,168 @@ public class ForkedProcessEventNotifierTest
         public void handleEvent( @Nonnull Event event )
         {
             cache.add( event );
+        }
+    }
+
+    /**
+     * Threadsafe impl. Mockito and Powermock are not thread-safe.
+     */
+    private static class ForkNodeArgumentsMock implements ForkNodeArguments
+    {
+        private final ConcurrentLinkedQueue<String> dumpStreamText = new ConcurrentLinkedQueue<>();
+        private final ConcurrentLinkedQueue<String> logWarningAtEnd = new ConcurrentLinkedQueue<>();
+        private final ConsoleLogger logger;
+        private final File dumpStreamTextFile;
+
+        ForkNodeArgumentsMock( ConsoleLogger logger, File dumpStreamTextFile )
+        {
+            this.logger = logger;
+            this.dumpStreamTextFile = dumpStreamTextFile;
+        }
+
+        @Nonnull
+        @Override
+        public String getSessionId()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int getForkChannelId()
+        {
+            return 0;
+        }
+
+        @Nonnull
+        @Override
+        public File dumpStreamText( @Nonnull String text )
+        {
+            dumpStreamText.add( text );
+            return dumpStreamTextFile;
+        }
+
+        @Nonnull
+        @Override
+        public File dumpStreamException( @Nonnull Throwable t )
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void logWarningAtEnd( @Nonnull String text )
+        {
+            logWarningAtEnd.add( text );
+        }
+
+        @Nonnull
+        @Override
+        public ConsoleLogger getConsoleLogger()
+        {
+            return logger;
+        }
+
+        boolean isCalled()
+        {
+            return !dumpStreamText.isEmpty() || !logWarningAtEnd.isEmpty();
+        }
+    }
+
+    /**
+     * Threadsafe impl. Mockito and Powermock are not thread-safe.
+     */
+    private static class ConsoleLoggerMock implements ConsoleLogger
+    {
+        final ConcurrentLinkedQueue<String> debug = new ConcurrentLinkedQueue<>();
+        final ConcurrentLinkedQueue<String> info = new ConcurrentLinkedQueue<>();
+        final ConcurrentLinkedQueue<String> error = new ConcurrentLinkedQueue<>();
+        final boolean isDebug;
+        final boolean isInfo;
+        final boolean isWarning;
+        final boolean isError;
+        boolean called;
+        boolean isDebugEnabledCalled;
+        boolean isInfoEnabledCalled;
+
+        ConsoleLoggerMock( boolean isDebug, boolean isInfo, boolean isWarning, boolean isError )
+        {
+            this.isDebug = isDebug;
+            this.isInfo = isInfo;
+            this.isWarning = isWarning;
+            this.isError = isError;
+        }
+
+        @Override
+        public boolean isDebugEnabled()
+        {
+            isDebugEnabledCalled = true;
+            called = true;
+            return isDebug;
+        }
+
+        @Override
+        public void debug( String message )
+        {
+            debug.add( message );
+            called = true;
+        }
+
+        @Override
+        public boolean isInfoEnabled()
+        {
+            isInfoEnabledCalled = true;
+            called = true;
+            return isInfo;
+        }
+
+        @Override
+        public void info( String message )
+        {
+            info.add( message );
+            called = true;
+        }
+
+        @Override
+        public boolean isWarnEnabled()
+        {
+            called = true;
+            return isWarning;
+        }
+
+        @Override
+        public void warning( String message )
+        {
+            called = true;
+        }
+
+        @Override
+        public boolean isErrorEnabled()
+        {
+            called = true;
+            return isError;
+        }
+
+        @Override
+        public void error( String message )
+        {
+            error.add( message );
+            called = true;
+        }
+
+        @Override
+        public void error( String message, Throwable t )
+        {
+            called = true;
+        }
+
+        @Override
+        public void error( Throwable t )
+        {
+            called = true;
+        }
+
+        boolean isCalled()
+        {
+            return called;
         }
     }
 }

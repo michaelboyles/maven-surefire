@@ -45,6 +45,7 @@ import javax.annotation.Nonnull;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
+import java.io.File;
 import java.io.PrintStream;
 import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
@@ -52,13 +53,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.apache.maven.surefire.api.util.internal.Channels.newBufferedChannel;
 import static org.apache.maven.surefire.api.util.internal.Channels.newChannel;
+import static org.fest.assertions.Assertions.assertThat;
+import static org.fest.assertions.MapAssert.entry;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyZeroInteractions;
 
 /**
  * @author Kristian Rosenvold
@@ -193,20 +197,27 @@ public class ForkingRunListenerTest
         TestSetMockReporterFactory providerReporterFactory = new TestSetMockReporterFactory();
         ForkClient forkStreamClient = new ForkClient( providerReporterFactory, new MockNotifiableTestStream(), 1 );
 
-        byte[] cmd = ":maven-surefire-event:sys-prop:normal-run:UTF-8:azE=:djE=:\n".getBytes();
+        byte[] cmd = ( ":maven-surefire-event:\u0008:sys-prop:" + (char) 10 + ":normal-run:\u0005:UTF-8:"
+            + "\u0000\u0000\u0000\u0002:k1:\u0000\u0000\u0000\u0002:v1:\n" ).getBytes();
         for ( Event e : streamToEvent( cmd ) )
         {
             forkStreamClient.handleEvent( e );
         }
-        cmd = "\n:maven-surefire-event:sys-prop:normal-run:UTF-8:azI=:djI=:\n".getBytes();
+        cmd = ( "\n:maven-surefire-event:\u0008:sys-prop:" + (char) 10 + ":normal-run:\u0005:UTF-8:"
+            + "\u0000\u0000\u0000\u0002:k2:\u0000\u0000\u0000\u0002:v2:\n" ).getBytes();
         for ( Event e : streamToEvent( cmd ) )
         {
             forkStreamClient.handleEvent( e );
         }
 
-        assertTrue( forkStreamClient.getTestVmSystemProperties().size() == 2 );
-        assertTrue( forkStreamClient.getTestVmSystemProperties().containsKey( "k1" ) );
-        assertTrue( forkStreamClient.getTestVmSystemProperties().containsKey( "k2" ) );
+        assertThat( forkStreamClient.getTestVmSystemProperties() )
+            .hasSize( 2 );
+
+        assertThat( forkStreamClient.getTestVmSystemProperties() )
+            .includes( entry( "k1", "v1" ) );
+
+        assertThat( forkStreamClient.getTestVmSystemProperties() )
+            .includes( entry( "k2", "v2" ) );
     }
 
     public void testMultipleEntries() throws Exception
@@ -285,19 +296,84 @@ public class ForkingRunListenerTest
         EH handler = new EH();
         CountdownCloseable countdown = new CountdownCloseable( mock( Closeable.class ), 1 );
         ConsoleLogger logger = mock( ConsoleLogger.class );
-        ForkNodeArguments arguments = mock( ForkNodeArguments.class );
-        when( arguments.getConsoleLogger() ).thenReturn( logger );
+        ForkNodeArgumentsMock arguments = new ForkNodeArgumentsMock( logger, new File( "" ) );
         ReadableByteChannel channel = newChannel( new ByteArrayInputStream( stream ) );
         try ( EventConsumerThread t = new EventConsumerThread( "t", channel, handler, countdown, arguments ) )
         {
             t.start();
             countdown.awaitClosed();
+            verifyZeroInteractions( logger );
+            assertThat( arguments.isCalled() )
+                .isFalse();
             for ( int i = 0, size = handler.countEventsInCache(); i < size; i++ )
             {
                 events.add( handler.pullEvent() );
             }
             assertEquals( 0, handler.countEventsInCache() );
             return events;
+        }
+    }
+
+    /**
+     * Threadsafe impl. Mockito and Powermock are not thread-safe.
+     */
+    private static class ForkNodeArgumentsMock implements ForkNodeArguments
+    {
+        private final ConcurrentLinkedQueue<String> dumpStreamText = new ConcurrentLinkedQueue<>();
+        private final ConcurrentLinkedQueue<String> logWarningAtEnd = new ConcurrentLinkedQueue<>();
+        private final ConsoleLogger logger;
+        private final File dumpStreamTextFile;
+
+        ForkNodeArgumentsMock( ConsoleLogger logger, File dumpStreamTextFile )
+        {
+            this.logger = logger;
+            this.dumpStreamTextFile = dumpStreamTextFile;
+        }
+
+        @Nonnull
+        @Override
+        public String getSessionId()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int getForkChannelId()
+        {
+            return 0;
+        }
+
+        @Nonnull
+        @Override
+        public File dumpStreamText( @Nonnull String text )
+        {
+            dumpStreamText.add( text );
+            return dumpStreamTextFile;
+        }
+
+        @Nonnull
+        @Override
+        public File dumpStreamException( @Nonnull Throwable t )
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void logWarningAtEnd( @Nonnull String text )
+        {
+            logWarningAtEnd.add( text );
+        }
+
+        @Nonnull
+        @Override
+        public ConsoleLogger getConsoleLogger()
+        {
+            return logger;
+        }
+
+        boolean isCalled()
+        {
+            return !dumpStreamText.isEmpty() || !logWarningAtEnd.isEmpty();
         }
     }
 

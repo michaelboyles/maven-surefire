@@ -1,4 +1,4 @@
-package wellFormedXmlFailures;
+package jira1857;
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -19,44 +19,15 @@ package wellFormedXmlFailures;
  * under the License.
  */
 
-import junit.extensions.TestSetup;
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
+import org.junit.jupiter.api.Test;
 
-public class TestSurefire3
-    extends TestCase
+import static org.junit.jupiter.api.Assertions.fail;
+
+class AssertionFailureMessageTest
 {
-
-    public TestSurefire3( )
+    @Test
+    void failedTest()
     {
-        super( );
+        fail( "fail_message" );
     }
-
-    public TestSurefire3( String name )
-    {
-        super( name );
-    }
-
-
-    public void testQuote()
-    {
-        fail( "\"" );
-    }
-
-    public void testLower()
-    {
-        fail( "<" );
-    }
-
-    public void testGreater()
-    {
-        fail( ">" );
-    }
-
-    public void testU0000()
-    {
-        fail( "Hi \u0000 there!" );
-    }
-
 }

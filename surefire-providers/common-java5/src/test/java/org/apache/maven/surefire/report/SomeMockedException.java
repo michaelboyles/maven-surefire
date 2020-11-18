@@ -1,4 +1,4 @@
-package wellFormedXmlFailures;
+package org.apache.maven.surefire.report;
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -19,44 +19,42 @@ package wellFormedXmlFailures;
  * under the License.
  */
 
-import junit.extensions.TestSetup;
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
-
-public class TestSurefire3
-    extends TestCase
+/**
+ * @author Adam Jones
+ */
+public class SomeMockedException extends RuntimeException
 {
-
-    public TestSurefire3( )
+    public SomeMockedException()
     {
-        super( );
     }
 
-    public TestSurefire3( String name )
+    @Override
+    public String getMessage()
     {
-        super( name );
+        return null;
     }
 
-
-    public void testQuote()
+    @Override
+    public String getLocalizedMessage()
     {
-        fail( "\"" );
+        return null;
     }
 
-    public void testLower()
+    @Override
+    public Throwable getCause()
     {
-        fail( "<" );
+        return null;
     }
 
-    public void testGreater()
+    @Override
+    public String toString()
     {
-        fail( ">" );
+        return null;
     }
 
-    public void testU0000()
+    @Override
+    public StackTraceElement[] getStackTrace()
     {
-        fail( "Hi \u0000 there!" );
+        return null;
     }
-
 }
